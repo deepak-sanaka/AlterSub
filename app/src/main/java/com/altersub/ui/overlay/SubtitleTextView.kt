@@ -6,15 +6,14 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
-import android.text.Layout
-import android.text.StaticLayout
 import android.text.TextPaint
 import android.util.AttributeSet
 import android.view.View
 
 /**
- * High-performance, zero-allocation subtitle rendering View for Android TV.
+ * High-performance, zero-allocation subtitle rendering View for Android TV and mobile.
  * Uses stroked text and semi-transparent bounding box for 100% legibility on any movie scene.
+ * Automatically fits text within safe screen margins to prevent clipping.
  */
 class SubtitleTextView @JvmOverloads constructor(
     context: Context,
@@ -23,17 +22,18 @@ class SubtitleTextView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
 
     private var subtitleText: String = ""
+    private var baseTextSizePx: Float = 30f * resources.displayMetrics.scaledDensity
 
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#FFE500") // High-visibility cinema yellow
-        textSize = 34f * resources.displayMetrics.scaledDensity
+        textSize = baseTextSizePx
         typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
         textAlign = Paint.Align.CENTER
     }
 
     private val strokePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
-        textSize = 34f * resources.displayMetrics.scaledDensity
+        textSize = baseTextSizePx
         typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
         style = Paint.Style.STROKE
         strokeWidth = 5f * resources.displayMetrics.density
@@ -42,13 +42,13 @@ class SubtitleTextView @JvmOverloads constructor(
     }
 
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#99000000") // Semi-transparent black backing box
+        color = Color.parseColor("#B3000000") // High-contrast semi-transparent black backing box
         style = Paint.Style.FILL
     }
 
     private val bgRect = RectF()
-    private val paddingHorizontal = 24f * resources.displayMetrics.density
-    private val paddingVertical = 12f * resources.displayMetrics.density
+    private val paddingHorizontal = 20f * resources.displayMetrics.density
+    private val paddingVertical = 10f * resources.displayMetrics.density
 
     fun setSubtitle(text: String) {
         if (subtitleText != text) {
@@ -58,10 +58,7 @@ class SubtitleTextView @JvmOverloads constructor(
     }
 
     fun setTextSizeSp(sp: Float) {
-        val px = sp * resources.displayMetrics.scaledDensity
-        textPaint.textSize = px
-        strokePaint.textSize = px
-        strokePaint.strokeWidth = (sp / 7f) * resources.displayMetrics.density
+        baseTextSizePx = sp * resources.displayMetrics.scaledDensity
         invalidate()
     }
 
@@ -79,29 +76,49 @@ class SubtitleTextView @JvmOverloads constructor(
         val viewHeight = height.toFloat()
         val centerX = viewWidth / 2f
 
-        val lineHeight = textPaint.fontSpacing
-        val totalTextHeight = lines.size * lineHeight
-
-        // Position subtitles in lower third of screen
-        val startY = viewHeight - totalTextHeight - (48f * resources.displayMetrics.density)
-
-        // Calculate max line width for bounding box
+        // Ensure text fits within 90% of screen width
+        val maxAvailableWidth = viewWidth * 0.90f
         var maxLineWidth = 0f
+        textPaint.textSize = baseTextSizePx
+
         for (line in lines) {
             val w = textPaint.measureText(line)
             if (w > maxLineWidth) maxLineWidth = w
         }
 
-        // Draw background box
-        val boxLeft = centerX - (maxLineWidth / 2f) - paddingHorizontal
-        val boxRight = centerX + (maxLineWidth / 2f) + paddingHorizontal
+        val scale = if (maxLineWidth > maxAvailableWidth && maxLineWidth > 0f) {
+            maxAvailableWidth / maxLineWidth
+        } else {
+            1.0f
+        }
+
+        val appliedTextSize = baseTextSizePx * scale
+        textPaint.textSize = appliedTextSize
+        strokePaint.textSize = appliedTextSize
+        strokePaint.strokeWidth = (appliedTextSize / 7f)
+
+        val lineHeight = textPaint.fontSpacing
+        val totalTextHeight = lines.size * lineHeight
+
+        // Position subtitles comfortably above navigation bar / TV bottom (85% down the screen)
+        val startY = viewHeight * 0.82f - (totalTextHeight / 2f)
+
+        // Measure scaled width for bounding box
+        var scaledMaxWidth = 0f
+        for (line in lines) {
+            val w = textPaint.measureText(line)
+            if (w > scaledMaxWidth) scaledMaxWidth = w
+        }
+
+        val boxLeft = centerX - (scaledMaxWidth / 2f) - paddingHorizontal
+        val boxRight = centerX + (scaledMaxWidth / 2f) + paddingHorizontal
         val boxTop = startY - paddingVertical
         val boxBottom = startY + totalTextHeight + paddingVertical
 
         bgRect.set(boxLeft, boxTop, boxRight, boxBottom)
-        canvas.drawRoundRect(bgRect, 16f, 16f, backgroundPaint)
+        canvas.drawRoundRect(bgRect, 18f, 18f, backgroundPaint)
 
-        // Draw stroked text then fill text for sharp outline
+        // Draw stroked text, then fill text for sharp outline
         for (i in lines.indices) {
             val line = lines[i]
             val y = startY + (i + 1) * lineHeight - textPaint.descent()

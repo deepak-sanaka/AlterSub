@@ -74,8 +74,9 @@ class StremioSubtitleProvider(
                     }
                 }
             }
-        } catch (_: Exception) {
-            // Log/handle network failure silently
+        } catch (e: Exception) {
+            println("StremioSubtitleProvider error: " + e.message)
+            e.printStackTrace()
         }
         return tracks
     }
