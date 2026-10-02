@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">AlterSub</string>
+    <string name="accessibility_service_description">Monitors playback screen titles and metadata from streaming apps to automatically sync external subtitles.</string>
+    <string name="overlay_service_title">AlterSub Overlay Service</string>
+    <string name="overlay_service_description">Rendering independent subtitles over streaming apps.</string>
+</resources>
