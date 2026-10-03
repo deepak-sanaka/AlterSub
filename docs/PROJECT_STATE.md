@@ -131,6 +131,7 @@ AlterSub/
   * Master clock uses `SystemClock.elapsedRealtime()` (monotonic hardware timer unaffected by system time changes).
   * Formula: $\text{CurrentTime} = \text{basePosition} + (\Delta t \times \text{speed}) + \text{userOffsetMs}$.
   * Supports manual offsets (`adjustOffset(+250ms)`, `adjustOffset(-1000ms)`) and manual seeks (`seekTo`, driven by the web remote's "Set time").
+  * Offsets are remembered **per subtitle track** (`TrackOffsets`). A new title or a never-seen track starts at 0, and returning to a track restores its offset.
   * All mutators are `@Synchronized`: the clock is written from the main thread (MediaSession), web server threads, and read by the render loop.
 * **Smart Sleep Ticker (`SubtitleIndex`)**:
   * Instead of a 60 FPS animation loop, `getTimeUntilNextChange` returns the exact media time until the text next changes: $\min(\text{activeCue.end} + 1, \text{nextCue.start}) - \text{time}$, or `Long.MAX_VALUE` after the last cue.
@@ -322,7 +323,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
 | KI-12 | Medium | Platform | Overlay foreground service never stops once started |
 | KI-18 | Medium | Timing | Multiple active media sessions all drive the same clock |
-| KI-19 | Low | Timing | User sync offset carries over to the next title |
 | KI-20 | Low | Networking | Three OkHttp clients, unclosed failed responses, non-cancellable blocking calls |
 | KI-21 | Low | Testing | Live-network test runs in the mandatory unit-test task |
 | KI-22 | Low | Testing | No tests for sleep calculation, provider parsing, web server, orchestration |
@@ -446,7 +446,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 
 | ID | Issue | Implication | Fix direction |
 | :--- | :--- | :--- | :--- |
-| KI-19 | `userOffsetMs` is not reset when content changes. | An offset tuned for one release carries over, so the next title starts out of sync. | Reset (or remember per content key) on content change. |
 | KI-20 | Three separate `OkHttpClient` instances; non-2xx responses are never closed; blocking `execute()` ignores coroutine cancellation. | Extra threads and connection pools on 1GB devices; OkHttp leak warnings; cancelled searches still finish their HTTP calls (results are discarded). | One shared client; `response.use { }`; consider OkHttp's suspend `await` / `Call.cancel()` on cancellation. |
 | KI-21 | `StremioSubtitleProviderLiveTest` runs inside `testDebugUnitTest`, which AGENTS.md makes mandatory before every commit. | Commits are blocked when offline or when Stremio is down; the test is non-deterministic. | Move it to a separate source set/task, or guard it with `Assume` on an env flag. |
 | KI-22 | No tests for `SubtitleIndex.getTimeUntilNextChange`, provider JSON parsing, `WebRemoteServer` routes, or `AlterSubApp` orchestration. | Regressions in sync timing, provider format changes, and endpoint behaviour go unnoticed. | Unit-test the index; MockWebServer for providers; extract orchestration from `Application` for JVM tests. |
@@ -469,6 +468,7 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | 2026-10-03 | **KI-15**: the parser read UTF-8 only, showed one of several overlapping cues, merged cues when a blank line was missing, and dropped hour-less VTT timestamps. | BOM / BOM-less UTF-16 / strict-UTF-8 detection with Windows-1252 fallback; an overlap-aware index (`getTextAt`) showing all active cues; recovery from missing separators; VTT `mm:ss.mmm`, cue settings and HTML entities. |
 | 2026-10-03 | **KI-16**: the overlay foreground service was only ever started on demand from background contexts, and a refused start or missing overlay permission failed silently or crashed the service. | Started from `MainActivity.onResume` on TV devices and kept alive; no redundant restarts while running; failures are caught and surfaced as `overlayError` in `/api/status` and the phone remote. Re-test background starts when raising `targetSdk`. |
 | 2026-10-03 | **KI-17**: the TV setup screen only showed the overlay permission state; subtitle size/colour/position could not be changed. | Accessibility and notification-access states are read on resume (✅/❌ + buttons disabled when granted); a "Subtitle style" card on the phone remote (`/api/style`) adjusts size, colour and position live, persisted across restarts. Also fixed while verifying: the three permission buttons crashed the app on Android TV builds without those settings screens (`ActivityNotFoundException`); they now show the ADB grant command instead. |
+| 2026-10-03 | **KI-19**: the user sync offset carried over from one title to the next. | `TrackOffsets` remembers the offset per subtitle track: content changes reset it to 0, and switching back to a track restores its own offset. |
 
 ---
 

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.altersub.core.clock.SubtitleClock
+import com.altersub.core.clock.TrackOffsets
 import com.altersub.core.model.ContentMetadata
 import com.altersub.core.model.SubtitleStyle
 import com.altersub.core.model.SubtitleTrack
@@ -52,6 +53,7 @@ class AlterSubApp : Application() {
     // Detections arrive concurrently from the main thread, web server threads and IO coroutines.
     private val detectionLock = Any()
     private val arbiter = DetectionArbiter()
+    private val trackOffsets = TrackOffsets()
     private var searchJob: Job? = null
     private var activationJob: Job? = null
 
@@ -120,11 +122,12 @@ class AlterSubApp : Application() {
             searchJob?.cancel()
             activationJob?.cancel()
 
-            // Never leave the previous title's subtitles running over the new one
+            // Never leave the previous title's subtitles (or its sync offset) running over the new one
             _currentContent.value = metadata
             _availableTracks.value = emptyList()
             _activeTrack.value = null
             _subtitleIndex.value = null
+            clock.setOffset(trackOffsets.switchTo(null, clock.userOffsetMs.value))
             Log.i("AlterSubApp", "New content detected via $source: ${metadata.getDisplayName()}")
 
             searchJob = appScope.launch {
@@ -187,6 +190,7 @@ class AlterSubApp : Application() {
 
                 synchronized(detectionLock) {
                     if (!isActive || _currentContent.value !== content) return@launch
+                    clock.setOffset(trackOffsets.switchTo(track.id, clock.userOffsetMs.value))
                     _subtitleIndex.value = SubtitleIndex(cues)
                     _activeTrack.value = track
                 }
