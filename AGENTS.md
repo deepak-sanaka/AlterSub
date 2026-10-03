@@ -86,8 +86,13 @@ Always run these commands from the project root (`C:\Users\deepa\AlterSub`):
 # 1b. Also run tests that hit real network services (e.g. the Stremio proxy)
 .\gradlew.bat testDebugUnitTest -PliveTests
 
-# 2. Compile and package the debug APK
+# 2. Compile and package the debug APK (unshrunk)
 .\gradlew.bat assembleDebug
+
+# 2b. Release APK, shrunk by R8 (code + resources). If you add reflection, JSON-to-class mapping, or
+#     resources looked up by name, add a targeted rule to app/proguard-rules.pro and test a release
+#     build on a device: R8 problems only show up at runtime.
+.\gradlew.bat assembleRelease
 
 # 3. Install directly onto a running emulator or connected TV
 .\gradlew.bat installDebug

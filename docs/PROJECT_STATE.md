@@ -83,7 +83,7 @@ AlterSub/
 │   │       └── ui/settings/QrCodeTest.kt            # The pairing link encodes and decodes back intact
 │   ├── src/main/assets/licenses/                    # OFL licence for the bundled UI font
 │   ├── build.gradle.kts                             # App module build configuration
-│   └── proguard-rules.pro                           # R8 / Proguard rules for NanoHTTPD and AlterSub models
+│   └── proguard-rules.pro                           # R8 rules for release builds (no blanket keeps; see the file)
 ├── docs/
 │   └── PROJECT_STATE.md                             # This file
 ├── tools/build_app_font.py                          # Rebuilds the UI font files from upstream Google Sans Flex
@@ -272,9 +272,12 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
     * Phone page at 375px: no horizontal scroll; search, track switching, timing and colour swatches all work; a wrong PIN shows the error on the pairing card.
     * **Single phone + font (later the same day)**: An install over a build with 3 stored tokens kept only the newest, so the TV opened in the "Paired" state. **Unpair phone** on the TV switched the card to the QR/PIN view live and moved focus to **Turn off**. Pairing through the QR link worked; a second pairing attempt with the correct PIN got 409 with an explanation; "Unpair this phone" on the phone cleared its token and returned it to the pairing card, and the TV went back to "Waiting for phone". The phone page loaded all three font weights from the TV.
     * **Footprint of the UI refresh + font** (clean debug builds; memory as total PSS, 3 runs each, ±3 MB run-to-run noise on the emulator):
-      * APK 8.90 MB → 9.72 MB (+0.82 MB): ZXing code +565 KB (unshrunk, `isMinifyEnabled = false`), fonts +235 KB (stored uncompressed), resources/licence ~+12 KB.
+      * Debug APK 8.90 MB → 9.72 MB (+0.82 MB): ZXing code +565 KB (debug builds are unshrunk), fonts +235 KB (stored uncompressed), resources/licence ~+12 KB.
       * Memory with the TV screen open 39.8–39.9 MB → 39.4–39.9 MB, in the background 40.3 → 40.1 MB: no measurable change.
       * The first font build set the font through the theme, which cost a steady **+4.2 MB of native memory** (framework and AppCompat each build a font collection carrying the full system fallback chain). Applying it in code via `ui/AppFont` (one shared typeface, weights derived from it) removed that entirely. Storing the TTFs uncompressed lets them be memory-mapped instead of inflated, and the web server no longer keeps a copy of the font bytes.
+    * **R8 release build** (code + resource shrinking, no blanket keep rules), signed locally with the debug key for testing:
+      * APK 8.17 MB (release, unshrunk) → 1.72 MB. Memory (total PSS, 3 runs) 33.3–33.5 MB → 28.8–29.3 MB, almost all from mapped code (10.6 → 6.3 MB). Start time unchanged (~0.83 s).
+      * Everything checked on the shrunk build: TV screen (font, QR, icons, focus), test subtitles overlay, overlay/notification/accessibility services running (the accessibility service only bound after an emulator reboot, and the debug build behaved the same, so it is an emulator quirk), and every phone-remote route: page and fonts, 401 when unpaired, pairing, 409 for a second phone, a real Stremio search with download and activation, track switching, offset, seek, style + palette, upload, play toggle, and unpairing. No crashes.
     * **Cost on the emulator** (software GL, so absolute numbers are pessimistic; same key presses, old vs new screen): UI-thread time per frame ~1–2 ms for both, GPU command time 13.6–14.6 ms (old) vs 16–17.5 ms (new), total frame time 37–41 ms vs 37–42 ms. No frames are drawn while idle. PSS 42.7 MB (old) vs 42.1 MB (new). Card borders and a second full-screen background fill were removed to get there.
 
 ### 5.3 Not Yet Verified
@@ -301,8 +304,13 @@ See KI-1.
 # Include tests that hit real network services
 .\gradlew.bat testDebugUnitTest -PliveTests
 
-# Assemble the debug APK
+# Assemble the debug APK (unshrunk, for development)
 .\gradlew.bat assembleDebug
+
+# Assemble the release APK: R8 code + resource shrinking. Output is unsigned until a release
+# keystore is configured; keep app/build/outputs/mapping/release/mapping.txt for each shipped
+# build, it is needed to read crash stack traces.
+.\gradlew.bat assembleRelease
 
 # Install directly on a connected device/emulator
 .\gradlew.bat installDebug
@@ -478,7 +486,7 @@ None open.
 * **Current Status**: Prototype / alpha.
   * **Works today**: builds and 87 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload, track selection, per-track offset, "Set time" and subtitle style.
   * **Open issues**: High and Medium only (§7.1). Most importantly, automatic detection and sync against real streaming apps on a physical TV is unproven (KI-1), and on the emulator accessibility auto-detection fired on the TV launcher's UI text (KI-3).
-* **Artifact Location**: `app/build/outputs/apk/debug/app-debug.apk` (~9.7 MB from a clean build; incremental debug builds leave dead space and can be much larger). R8 is off (`isMinifyEnabled = false`); turning it on would mainly shrink library code such as ZXing, but needs keep rules and testing.
+* **Artifact Location**: release `app/build/outputs/apk/release/app-release-unsigned.apk` (~1.7 MB, R8-shrunk; needs a release signing config before distribution), debug `app/build/outputs/apk/debug/app-debug.apk` (~9.7 MB from a clean build, unshrunk; incremental debug builds leave dead space and can be much larger).
 * **Recommended Next Steps** (in order):
   1. **Device validation (KI-1)**: real Android TV + Netflix/Prime/Disney+; record MediaSession and accessibility output per app.
   2. **Sourcing resilience (KI-2)**: propagate the IMDb ID so YTS works; add OpenSubtitles API-key entry.

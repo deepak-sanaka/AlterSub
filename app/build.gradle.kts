@@ -19,7 +19,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 strips unused code (most of ZXing, unused AppCompat/OkHttp paths) and resources.
+            // Debug builds stay unshrunk for fast iteration; test release builds on a TV before shipping.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
