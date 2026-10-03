@@ -49,3 +49,6 @@ captures/
 
 # Gradle daemon JVM properties
 gradle-daemon-jvm.properties
+
+# Real-device test logs (tools/capture_device_logs.sh): contain watched titles and network details
+device-logs/

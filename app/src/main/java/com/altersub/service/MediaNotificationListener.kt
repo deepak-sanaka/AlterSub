@@ -13,16 +13,22 @@ import com.altersub.AlterSubApp
 import com.altersub.core.clock.SubtitleClock
 import com.altersub.detection.AppPackageFilter
 import com.altersub.detection.DetectionSource
+import com.altersub.detection.DiagLog
 import com.altersub.detection.TitleSanitizer
 
 class MediaNotificationListener : NotificationListenerService() {
 
     private var mediaSessionManager: MediaSessionManager? = null
-    private val activeControllers = mutableListOf<MediaController>()
+    private val activeControllers = mutableListOf<Pair<MediaController, SessionCallback>>()
 
-    private val callback = object : MediaController.Callback() {
+    /** One callback per session, so diagnostics can say which app published what. */
+    private inner class SessionCallback(private val pkg: String) : MediaController.Callback() {
         override fun onPlaybackStateChanged(state: PlaybackState?) {
             if (state == null) return
+            DiagLog.d {
+                "[$pkg] playback state=${state.state} position=${state.position} speed=${state.playbackSpeed} " +
+                    "updated ${SystemClock.elapsedRealtime() - state.lastPositionUpdateTime} ms ago"
+            }
             val isPlaying = state.state == PlaybackState.STATE_PLAYING
             val speed = state.playbackSpeed
             val clock = AlterSubApp.instance.clock
@@ -48,6 +54,7 @@ class MediaNotificationListener : NotificationListenerService() {
 
         override fun onMetadataChanged(metadata: MediaMetadata?) {
             if (metadata == null) return
+            DiagLog.d { "[$pkg] metadata ${describe(metadata)}" }
             val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)
                 ?: metadata.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
                 ?: return
@@ -56,9 +63,19 @@ class MediaNotificationListener : NotificationListenerService() {
             val sanitized = TitleSanitizer.sanitize(title)
             if (sanitized != null) {
                 AlterSubApp.instance.onContentDetected(sanitized, DetectionSource.MEDIA_SESSION)
+            } else {
+                DiagLog.d { "[$pkg] title rejected by TitleSanitizer: \"$title\"" }
             }
         }
     }
+
+    /** Every text and number the session publishes (artwork skipped), e.g. {TITLE=..., DURATION=...}. */
+    private fun describe(metadata: MediaMetadata): String = metadata.keySet().sorted().mapNotNull { key ->
+        val value = metadata.getText(key)?.toString()
+            ?: metadata.getLong(key).takeIf { it != 0L }?.toString()
+            ?: return@mapNotNull null
+        key.removePrefix("android.media.metadata.") + "=" + value
+    }.joinToString(prefix = "{", postfix = "}")
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -81,15 +98,23 @@ class MediaNotificationListener : NotificationListenerService() {
 
     private fun updateControllers(controllers: List<MediaController>?) {
         val hadTargetSessions = activeControllers.isNotEmpty()
-        for (c in activeControllers) {
-            c.unregisterCallback(callback)
+        for ((controller, callback) in activeControllers) {
+            controller.unregisterCallback(callback)
         }
         activeControllers.clear()
+
+        DiagLog.d {
+            "active sessions: " + controllers.orEmpty().joinToString { c ->
+                val pkg = c.packageName.orEmpty()
+                if (AppPackageFilter.isTargetApp(pkg)) "$pkg (target)" else pkg
+            }.ifEmpty { "none" }
+        }
 
         for (controller in controllers.orEmpty()) {
             val pkg = controller.packageName ?: ""
             if (AppPackageFilter.isTargetApp(pkg)) {
-                activeControllers.add(controller)
+                val callback = SessionCallback(pkg)
+                activeControllers.add(controller to callback)
                 controller.registerCallback(callback)
 
                 // Inspect initial state
@@ -106,8 +131,8 @@ class MediaNotificationListener : NotificationListenerService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        for (c in activeControllers) {
-            c.unregisterCallback(callback)
+        for ((controller, callback) in activeControllers) {
+            controller.unregisterCallback(callback)
         }
         activeControllers.clear()
     }

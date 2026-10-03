@@ -317,6 +317,8 @@ See KI-1.
 ```
 
 ### Fast ADB Deployment to Android TV
+Enable **Developer options → USB debugging** on the TV. Most Android TVs then also accept ADB over the network on port 5555 (`adb mdns services` lists them); the first connection shows an "Allow debugging?" prompt on the TV. Android 11+ / Google TV may need **Wireless debugging → Pair device with pairing code** and `adb pair <ip>:<port> <code>` first.
+
 ```powershell
 # Connect over Wi-Fi
 adb connect <TV_IP>:5555
@@ -327,6 +329,14 @@ adb -s <TV_IP>:5555 install -r app\build\outputs\apk\debug\app-debug.apk
 # Grant all required permissions in one command
 adb -s <TV_IP>:5555 shell "appops set com.altersub SYSTEM_ALERT_WINDOW allow && settings put secure enabled_accessibility_services com.altersub/com.altersub.service.AccessibilityInspectorService && settings put secure accessibility_enabled 1 && cmd notification allow_listener com.altersub/com.altersub.service.MediaNotificationListener"
 ```
+
+### Recording a Test Session on a Real TV
+Use the **debug** build for testing: it adds detection diagnostics under the logcat tag `AlterSubDiag` (every app's media session and its metadata, the foreground package, the text the accessibility scraper saw and what it picked). Release builds strip these because they include other apps' screen text.
+
+```bash
+tools/capture_device_logs.sh <TV_IP>:5555   # Ctrl+C to stop
+```
+It writes `device-logs/<timestamp>/` (git-ignored): `device-info.txt` (model, Android version, RAM, installed streaming apps), `logcat.txt` (full logcat), and `snapshots.txt` (every 15 s: foreground window, media sessions, AlterSub memory).
 
 ### Android TV Emulator (Android 9 / API 28)
 Easiest path: Android Studio → **Device Manager → Create Virtual Device → TV → Television (1080p)** → system image **Pie (API 28) Android TV x86**. Then set RAM to **1024 MB** under advanced settings to mimic target boxes. The API 28 TV image requires accepting the **Android SDK Preview License**.

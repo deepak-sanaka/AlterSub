@@ -110,6 +110,9 @@ adb shell settings put secure accessibility_enabled 1
 # Grant notification / media session listener
 adb shell cmd notification allow_listener com.altersub/com.altersub.service.MediaNotificationListener
 
+# Record a real-TV test session (debug build; diagnostics use the logcat tag AlterSubDiag)
+bash tools/capture_device_logs.sh <TV_IP>:5555
+
 # Forward embedded web remote port to host PC (use the port the TV screen shows if 8080 was taken),
 # then open http://localhost:8888 and enter the PIN shown on the AlterSub TV screen
 # (or open http://localhost:8888/#pin=<PIN>, which is what the TV's QR code does)

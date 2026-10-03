@@ -41,6 +41,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true // BuildConfig.DEBUG gates detection diagnostics (DiagLog)
     }
 
     androidResources {

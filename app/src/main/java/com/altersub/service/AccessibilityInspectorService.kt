@@ -7,16 +7,22 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.altersub.AlterSubApp
 import com.altersub.detection.AppPackageFilter
 import com.altersub.detection.DetectionSource
+import com.altersub.detection.DiagLog
 import com.altersub.detection.TitleSanitizer
 
 class AccessibilityInspectorService : AccessibilityService() {
 
     private var lastScrapedTime: Long = 0L
+    private var lastPackage: String? = null
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
         val pkg = event.packageName?.toString() ?: return
+        if (pkg != lastPackage) {
+            lastPackage = pkg
+            DiagLog.d { "foreground package: $pkg (target=${AppPackageFilter.isTargetApp(pkg)})" }
+        }
         if (!AppPackageFilter.isTargetApp(pkg)) return
 
         // A live media session or the user's own pick outranks anything scraped from the screen
@@ -40,16 +46,19 @@ class AccessibilityInspectorService : AccessibilityService() {
     private fun inspectNodeHierarchy(root: AccessibilityNodeInfo, pkg: String) {
         val candidates = mutableListOf<String>()
         collectTextNodes(root, candidates, depth = 0, maxDepth = 6)
+        DiagLog.d { "[$pkg] scraped ${candidates.size} texts: ${candidates.take(15)}" }
 
         // Find the best matching title
         for (candidate in candidates) {
             val metadata = TitleSanitizer.sanitize(candidate, pkg)
             if (metadata != null) {
                 Log.d("AccessibilityInspector", "Found media title: ${metadata.getDisplayName()}")
+                DiagLog.d { "[$pkg] picked \"$candidate\" -> ${metadata.getDisplayName()}" }
                 AlterSubApp.instance.onContentDetected(metadata, DetectionSource.ACCESSIBILITY)
-                break
+                return
             }
         }
+        DiagLog.d { "[$pkg] no title among the scraped texts" }
     }
 
     private fun collectTextNodes(
