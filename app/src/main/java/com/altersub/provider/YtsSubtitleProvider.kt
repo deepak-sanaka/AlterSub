@@ -9,9 +9,10 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.ZipInputStream
+import kotlin.coroutines.cancellation.CancellationException
 
 class YtsSubtitleProvider(
-    private val client: OkHttpClient = OkHttpClient()
+    private val client: OkHttpClient = Http.client
 ) : SubtitleProvider {
 
     override val name: String = "YTS Movie Subtitles"
@@ -31,8 +32,8 @@ class YtsSubtitleProvider(
                 .header("User-Agent", "AlterSub/1.0")
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
+            client.newCall(request).await().use { response ->
+                if (!response.isSuccessful) return emptyList()
                 val body = response.body?.string() ?: return emptyList()
                 val json = JSONObject(body)
                 val subsObj = json.optJSONObject("subtitles") ?: return emptyList()
@@ -66,6 +67,8 @@ class YtsSubtitleProvider(
                     }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
         }
         return tracks
@@ -81,29 +84,31 @@ class YtsSubtitleProvider(
             }
 
             val request = Request.Builder().url(track.downloadUrl).build()
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val bytes = response.body?.bytes() ?: return null
-
-                // If URL returns a zip file, unpack the first .srt inside
-                if (track.format == "zip" || track.downloadUrl.endsWith(".zip")) {
-                    ZipInputStream(ByteArrayInputStream(bytes)).use { zis ->
-                        var entry = zis.nextEntry
-                        while (entry != null) {
-                            if (entry.name.endsWith(".srt", ignoreCase = true)) {
-                                FileOutputStream(targetFile).use { out ->
-                                    zis.copyTo(out)
-                                }
-                                return targetFile
-                            }
-                            entry = zis.nextEntry
-                        }
-                    }
-                } else {
-                    FileOutputStream(targetFile).use { it.write(bytes) }
-                    return targetFile
-                }
+            val bytes = client.newCall(request).await().use { response ->
+                if (!response.isSuccessful) return null
+                response.body?.bytes() ?: return null
             }
+
+            // If URL returns a zip file, unpack the first .srt inside
+            if (track.format == "zip" || track.downloadUrl.endsWith(".zip")) {
+                ZipInputStream(ByteArrayInputStream(bytes)).use { zis ->
+                    var entry = zis.nextEntry
+                    while (entry != null) {
+                        if (entry.name.endsWith(".srt", ignoreCase = true)) {
+                            FileOutputStream(targetFile).use { out ->
+                                zis.copyTo(out)
+                            }
+                            return targetFile
+                        }
+                        entry = zis.nextEntry
+                    }
+                }
+            } else {
+                FileOutputStream(targetFile).use { it.write(bytes) }
+                return targetFile
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
         }
         return null

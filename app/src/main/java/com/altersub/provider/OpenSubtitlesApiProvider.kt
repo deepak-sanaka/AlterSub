@@ -10,11 +10,12 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URLEncoder
+import kotlin.coroutines.cancellation.CancellationException
 
 class OpenSubtitlesApiProvider(
     private var apiKey: String = "",
     private var authToken: String = "",
-    private val client: OkHttpClient = OkHttpClient()
+    private val client: OkHttpClient = Http.client
 ) : SubtitleProvider {
 
     override val name: String = "Official OpenSubtitles.com"
@@ -54,8 +55,8 @@ class OpenSubtitlesApiProvider(
                 }
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
+            client.newCall(request).await().use { response ->
+                if (!response.isSuccessful) return emptyList()
                 val body = response.body?.string() ?: return emptyList()
                 val json = JSONObject(body)
                 val data = json.optJSONArray("data") ?: return emptyList()
@@ -84,6 +85,8 @@ class OpenSubtitlesApiProvider(
                     }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
         }
         return tracks
@@ -116,20 +119,22 @@ class OpenSubtitlesApiProvider(
                 .post(body)
                 .build()
 
-            val resp = client.newCall(req).execute()
-            if (resp.isSuccessful) {
-                val respJson = JSONObject(resp.body?.string() ?: "")
-                val directLink = respJson.optString("link", "")
-                if (directLink.isNotEmpty()) {
-                    val fileReq = Request.Builder().url(directLink).build()
-                    val fileResp = client.newCall(fileReq).execute()
-                    if (fileResp.isSuccessful) {
-                        val bytes = fileResp.body?.bytes() ?: return null
-                        FileOutputStream(targetFile).use { it.write(bytes) }
-                        return targetFile
-                    }
+            val directLink = client.newCall(req).await().use { resp ->
+                if (!resp.isSuccessful) return null
+                JSONObject(resp.body?.string() ?: "").optString("link", "")
+            }
+            if (directLink.isEmpty()) return null
+
+            val fileReq = Request.Builder().url(directLink).build()
+            client.newCall(fileReq).await().use { fileResp ->
+                if (fileResp.isSuccessful) {
+                    val bytes = fileResp.body?.bytes() ?: return null
+                    FileOutputStream(targetFile).use { it.write(bytes) }
+                    return targetFile
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
         }
         return null

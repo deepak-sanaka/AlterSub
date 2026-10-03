@@ -140,7 +140,7 @@ AlterSub/
   * Overlapping cues (e.g. two speakers, or a long "[music]" cue behind dialogue) are all shown, one per line, via `SubtitleIndex.getTextAt`.
 
 ### 3.4 Multi-Source Subtitle Sourcing (`CompositeSubtitleProvider`)
-Searches all sources concurrently using Kotlin coroutines `async { ... }`.
+Searches all sources concurrently using Kotlin coroutines `async { ... }`. All providers share one `OkHttpClient` (`Http.client`) and use `Call.await()`, so cancelling a superseded search also cancels its in-flight HTTP requests. Every response is closed with `use { }`.
 > ⚠️ In the current build **only the Stremio source can return results** in the automatic flow (KI-2).
 
 1. **Stremio Community Mirror (`StremioSubtitleProvider`)**:
@@ -323,7 +323,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
 | KI-12 | Medium | Platform | Overlay foreground service never stops once started |
 | KI-18 | Medium | Timing | Multiple active media sessions all drive the same clock |
-| KI-20 | Low | Networking | Three OkHttp clients, unclosed failed responses, non-cancellable blocking calls |
 | KI-21 | Low | Testing | Live-network test runs in the mandatory unit-test task |
 | KI-22 | Low | Testing | No tests for sleep calculation, provider parsing, web server, orchestration |
 | KI-24 | Low | Build / Config | Unused Leanback dependency; unnecessary `usesCleartextTraffic` |
@@ -446,7 +445,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 
 | ID | Issue | Implication | Fix direction |
 | :--- | :--- | :--- | :--- |
-| KI-20 | Three separate `OkHttpClient` instances; non-2xx responses are never closed; blocking `execute()` ignores coroutine cancellation. | Extra threads and connection pools on 1GB devices; OkHttp leak warnings; cancelled searches still finish their HTTP calls (results are discarded). | One shared client; `response.use { }`; consider OkHttp's suspend `await` / `Call.cancel()` on cancellation. |
 | KI-21 | `StremioSubtitleProviderLiveTest` runs inside `testDebugUnitTest`, which AGENTS.md makes mandatory before every commit. | Commits are blocked when offline or when Stremio is down; the test is non-deterministic. | Move it to a separate source set/task, or guard it with `Assume` on an env flag. |
 | KI-22 | No tests for `SubtitleIndex.getTimeUntilNextChange`, provider JSON parsing, `WebRemoteServer` routes, or `AlterSubApp` orchestration. | Regressions in sync timing, provider format changes, and endpoint behaviour go unnoticed. | Unit-test the index; MockWebServer for providers; extract orchestration from `Application` for JVM tests. |
 | KI-24 | `androidx.leanback` is declared but unused; `android:usesCleartextTraffic="true"` though all outbound calls are HTTPS (inbound server traffic is unaffected by this flag). | Larger APK than necessary; cleartext is allowed for no reason. | Remove both. |
@@ -469,6 +467,7 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | 2026-10-03 | **KI-16**: the overlay foreground service was only ever started on demand from background contexts, and a refused start or missing overlay permission failed silently or crashed the service. | Started from `MainActivity.onResume` on TV devices and kept alive; no redundant restarts while running; failures are caught and surfaced as `overlayError` in `/api/status` and the phone remote. Re-test background starts when raising `targetSdk`. |
 | 2026-10-03 | **KI-17**: the TV setup screen only showed the overlay permission state; subtitle size/colour/position could not be changed. | Accessibility and notification-access states are read on resume (✅/❌ + buttons disabled when granted); a "Subtitle style" card on the phone remote (`/api/style`) adjusts size, colour and position live, persisted across restarts. Also fixed while verifying: the three permission buttons crashed the app on Android TV builds without those settings screens (`ActivityNotFoundException`); they now show the ADB grant command instead. |
 | 2026-10-03 | **KI-19**: the user sync offset carried over from one title to the next. | `TrackOffsets` remembers the offset per subtitle track: content changes reset it to 0, and switching back to a track restores its own offset. |
+| 2026-10-03 | **KI-20**: three separate OkHttpClients, unclosed non-2xx responses, and blocking `execute()` calls that ignored coroutine cancellation. | One shared `Http.client`; every response closed via `use { }`; a cancellable `Call.await()` cancels the HTTP call with the coroutine (providers re-throw `CancellationException` instead of swallowing it). |
 
 ---
 

@@ -8,13 +8,10 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URLEncoder
-import java.util.concurrent.TimeUnit
+import kotlin.coroutines.cancellation.CancellationException
 
 class StremioSubtitleProvider(
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .build()
+    private val client: OkHttpClient = Http.client
 ) : SubtitleProvider {
 
     override val name: String = "Community OpenSubtitles"
@@ -47,8 +44,8 @@ class StremioSubtitleProvider(
                 .header("User-Agent", "AlterSub/1.0 (Android TV)")
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
+            client.newCall(request).await().use { response ->
+                if (!response.isSuccessful) return emptyList()
                 val body = response.body?.string() ?: return emptyList()
                 val json = JSONObject(body)
                 val subtitlesArray = json.optJSONArray("subtitles") ?: return emptyList()
@@ -74,6 +71,8 @@ class StremioSubtitleProvider(
                     }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             println("StremioSubtitleProvider error: " + e.message)
             e.printStackTrace()
@@ -95,34 +94,40 @@ class StremioSubtitleProvider(
                 .header("User-Agent", "AlterSub/1.0")
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val bytes = response.body?.bytes() ?: return null
-                FileOutputStream(targetFile).use { it.write(bytes) }
-                return targetFile
+            client.newCall(request).await().use { response ->
+                if (response.isSuccessful) {
+                    val bytes = response.body?.bytes() ?: return null
+                    FileOutputStream(targetFile).use { it.write(bytes) }
+                    return targetFile
+                }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             // Download error handling
         }
         return null
     }
 
-    private fun resolveImdbId(metadata: ContentMetadata): String? {
+    private suspend fun resolveImdbId(metadata: ContentMetadata): String? {
         try {
             val type = if (metadata.isEpisode) "series" else "movie"
             val encodedQuery = URLEncoder.encode(metadata.title, "UTF-8")
             val url = "https://v3-cinemeta.strem.io/catalog/$type/top/search=$encodedQuery.json"
 
             val request = Request.Builder().url(url).build()
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val json = JSONObject(response.body?.string() ?: "")
-                val metas = json.optJSONArray("metas")
-                if (metas != null && metas.length() > 0) {
-                    val first = metas.getJSONObject(0)
-                    return first.optString("imdb_id").ifEmpty { first.optString("id") }
+            client.newCall(request).await().use { response ->
+                if (response.isSuccessful) {
+                    val json = JSONObject(response.body?.string() ?: "")
+                    val metas = json.optJSONArray("metas")
+                    if (metas != null && metas.length() > 0) {
+                        val first = metas.getJSONObject(0)
+                        return first.optString("imdb_id").ifEmpty { first.optString("id") }
+                    }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
         }
         return null
