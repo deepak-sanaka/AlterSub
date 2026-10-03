@@ -4,6 +4,7 @@ import com.altersub.core.clock.SubtitleClock
 import com.altersub.core.model.ContentMetadata
 import com.altersub.core.model.SubtitleStyle
 import com.altersub.core.model.SubtitleTrack
+import com.altersub.core.session.PickMemory
 import com.altersub.detection.DetectionSource
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
@@ -25,4 +26,13 @@ interface RemoteController {
     fun selectTrack(track: SubtitleTrack)
     fun loadDirectSrt(file: File, displayName: String)
     fun updateSubtitleStyle(change: (SubtitleStyle) -> SubtitleStyle)
+
+    /** Remembered subtitle picks, newest first, for one-tap restore on the phone. */
+    fun recentPicks(): List<PickMemory.Pick>
+
+    /** Brings back a remembered pick (track + offset) by its content key; false if it is no longer remembered. */
+    fun restorePick(contentKey: String): Boolean
+
+    /** The user moved the sync (offset or "Set time"): remember it for the current title. */
+    fun onSyncAdjusted()
 }

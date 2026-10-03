@@ -70,6 +70,7 @@ class WebRemoteServer(
                     val params = session.parms
                     val delta = params["delta"]?.toLongOrNull() ?: 0L
                     controller.clock.adjustOffset(delta)
+                    controller.onSyncAdjusted()
                     jsonResponse(JSONObject().put("success", true).put("offsetMs", controller.clock.userOffsetMs.value))
                 }
 
@@ -81,6 +82,7 @@ class WebRemoteServer(
                     } else {
                         val clock = controller.clock
                         clock.seekTo(positionMs)
+                        controller.onSyncAdjusted()
                         jsonResponse(JSONObject().put("success", true).put("positionMs", clock.getPositionMs()))
                     }
                 }
@@ -124,6 +126,14 @@ class WebRemoteServer(
                         controller.onContentDetected(ContentMetadata(title = query), DetectionSource.MANUAL)
                     }
                     jsonResponse(JSONObject().put("success", true))
+                }
+
+                uri == "/api/restore" && method == Method.POST -> {
+                    if (controller.restorePick(session.parms["key"] ?: "")) {
+                        jsonResponse(JSONObject().put("success", true))
+                    } else {
+                        jsonResponse(JSONObject().put("error", "No longer remembered"), Response.Status.NOT_FOUND)
+                    }
                 }
 
                 uri == "/api/upload" && method == Method.POST -> {
@@ -205,8 +215,25 @@ class WebRemoteServer(
             .put("overlayError", controller.overlayError.value ?: "")
             .put("style", styleJson(controller.subtitleStyle.value))
             .put("tracks", tracksArray)
+            .put("recent", recentJson(content?.contentKey))
 
         return jsonResponse(json)
+    }
+
+    /** Remembered picks other than what is loaded now, for one-tap restore. */
+    private fun recentJson(currentKey: String?): JSONArray {
+        val recent = JSONArray()
+        for (pick in controller.recentPicks()) {
+            if (pick.key == currentKey) continue
+            recent.put(
+                JSONObject()
+                    .put("key", pick.key)
+                    .put("title", pick.content.getDisplayName())
+                    .put("track", pick.track.title)
+                    .put("offsetMs", pick.offsetMs)
+            )
+        }
+        return recent
     }
 
     private fun styleJson(style: SubtitleStyle): JSONObject {
@@ -225,7 +252,7 @@ class WebRemoteServer(
         val files = HashMap<String, String>()
         session.parseBody(files)
 
-        for (tempPath in files.values) {
+        for ((field, tempPath) in files) {
             val tempFile = File(tempPath)
             if (tempFile.exists()) {
                 uploadDir.mkdirs()
@@ -237,12 +264,26 @@ class WebRemoteServer(
                     }
                 }
 
-                controller.loadDirectSrt(targetFile, "Uploaded Subtitle")
+                controller.loadDirectSrt(targetFile, uploadName(session.parms[field]))
                 return jsonResponse(JSONObject().put("success", true))
             }
         }
 
         return jsonResponse(JSONObject().put("error", "No file received"), Response.Status.BAD_REQUEST)
+    }
+
+    /**
+     * The uploaded file's own name, so several uploads can be told apart (KI-30). NanoHTTPD puts a file
+     * field's original name in the matching parameter. The page renders it with textContent (KI-8).
+     */
+    private fun uploadName(originalFileName: String?): String {
+        val name = originalFileName.orEmpty()
+            .substringAfterLast('/').substringAfterLast('\\')
+            .substringBeforeLast('.')
+            .replace(Regex("[\\p{Cntrl}]"), " ")
+            .trim()
+            .take(80)
+        return name.ifEmpty { "Uploaded Subtitle" }
     }
 
     private fun jsonResponse(

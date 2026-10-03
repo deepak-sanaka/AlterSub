@@ -37,6 +37,7 @@ AlterSub/
 │   │   │   │   │   │   ├── SrtParser.kt             # SRT/WebVTT parser: BOM/UTF-16/Windows-1252 detection, markup + entity cleanup
 │   │   │   │   │   │   └── SubtitleIndex.kt         # Binary search index (overlap-aware) + next-boundary calculator
 │   │   │   │   │   └── session/
+│   │   │   │   │       ├── PickMemory.kt            # Remembered picks: track, offset, progress and app per title (persisted)
 │   │   │   │   │       └── SubtitleSession.kt       # Detection → search → download → active track (race-safe, JVM-testable)
 │   │   │   │   ├── detection/
 │   │   │   │   │   ├── AppPackageFilter.kt          # Target streaming apps (Netflix, Prime, Disney+, etc.)
@@ -75,7 +76,7 @@ AlterSub/
 │   │       ├── core/clock/                          # SubtitleClockTest (position extrapolation), TrackOffsetsTest
 │   │       ├── core/model/SubtitleStyleTest.kt      # Style clamping and colour validation
 │   │       ├── core/parser/                         # SrtParserTest (encodings, VTT, malformed SRT), SubtitleIndexTest
-│   │       ├── core/session/SubtitleSessionTest.kt  # Orchestration races with a controllable fake provider
+│   │       ├── core/session/                        # SubtitleSessionTest (races, remembered picks), PickMemoryTest
 │   │       ├── detection/                           # DetectionArbiterTest, TitleSanitizerTest
 │   │       ├── provider/                            # MockWebServer tests per provider, HttpAwaitTest, CompositeSubtitleProviderTest,
 │   │       │                                        #   StremioSubtitleProviderLiveTest (real network, only with -PliveTests)
@@ -158,6 +159,12 @@ AlterSub/
   * Between changes it sleeps exactly until the next boundary, converted to wall time at the current playback speed (`SubtitleClock.realtimeFor`). While paused, or after the last cue, it doesn't wake at all, and it touches the UI thread only when the text changes.
   * Overlapping cues (e.g. two speakers, or a long "[music]" cue behind dialogue) are all shown, one per line, via `SubtitleIndex.getTextAt`.
 
+* **Remembered picks (`PickMemory`, owned by `SubtitleSession`)**:
+  * Every track the user chose (search, track pick, upload, restore) or that a media-session title led to is remembered with its offset, playback position and the streaming app it played in; screen-scraped guesses are not. Stored as JSON in `SharedPreferences` (`subtitle_picks`), at most 10, newest first; position-only updates are written at most every 30 s.
+  * Detecting or searching a remembered title brings back its track and offset at once (the search still runs, for alternatives).
+  * When nothing is loaded and a streaming app reports playback within 5 minutes of where that app's last pick left off, the pick is restored. That is how Netflix content (no title, KI-26) is recognised after a restart or when resuming a film later. A position far away (e.g. a different film starting from 0) or another app is ignored.
+  * The phone page lists recent picks (`recent` in `/api/status`) for one-tap restore (`POST /api/restore?key=`).
+
 ### 3.4 Multi-Source Subtitle Sourcing (`CompositeSubtitleProvider`)
 Searches all sources concurrently using Kotlin coroutines `async { ... }`. All providers share one `OkHttpClient` (`Http.client`) and use `Call.await()`, so cancelling a superseded search also cancels its in-flight HTTP requests. Every response is closed with `use { }`.
 > ⚠️ In the current build **only the Stremio source can return results** in the automatic flow (KI-2).
@@ -222,7 +229,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
 
 ### 5.1 Automated Unit Tests
 * **Test Runner**: Gradle JUnit 4 on the JVM, with the real `org.json` artifact on the test classpath (Android's stub would throw).
-* **Status (2026-10-03)**: 87 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
+* **Status (2026-10-03)**: 102 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
 * **Test Suites**:
   * [`DetectionArbiterTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/DetectionArbiterTest.kt): MediaSession outranks scraping; a manual choice holds until the session title changes; scraping resumes after sessions end. (Passes)
   * [`SubtitleClockTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/clock/SubtitleClockTest.kt): MediaSession position extrapolation (elapsed time × speed, paused, missing/future snapshot, zero speed). (Passes)
@@ -403,23 +410,22 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 | KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
 | KI-12 | Medium | Platform | Overlay foreground service never stops once started |
 | KI-18 | Medium | Timing | Multiple active media sessions all drive the same clock |
-| KI-27 | Medium | Timing | Subtitle files can be offset from the streaming cut, and the fix is lost on restart |
+| KI-27 | Medium | Timing | Subtitle files can be offset from the streaming cut; finding the offset is fiddly |
 | KI-28 | Medium | Platform | Low-RAM TVs need a one-time ADB grant before subtitles follow pause and seek |
 | KI-29 | Low | Performance | The phone page's 2 s status poll costs ~1% CPU on the TV while open |
-| KI-30 | Low | UX | Every phone upload is listed as "Uploaded Subtitle" |
 
 ### 7.2 High Severity
 
 #### KI-1 · Only partly verified on the target platform — *Confirmed (partly addressed)*
 * **Issue**: First real-TV session done on 2026-10-03 (§5.2). It answered the central question for Netflix: **position and play state are available, the title is not** (neither in its session nor on screen). Hotstar does publish a title. Other apps, a non-low-RAM TV, and long sessions are still untested (§5.3).
 * **Implication**: Automatic *sync* works (Strategy A2 on low-RAM TVs, Strategy A elsewhere); automatic *identification* of Netflix content is impossible with current techniques, so the phone search is the primary path for Netflix.
-* **Fix direction**: Test Prime Video, Disney+ and YouTube the same way (`tools/capture_device_logs.sh` + `AlterSubDiag`), and a non-low-RAM TV. Make the Netflix path fast: remember the last search per app (KI-26) and keep the per-track offset across restarts (KI-27).
+* **Fix direction**: Test Prime Video, Disney+ and YouTube the same way (`tools/capture_device_logs.sh` + `AlterSubDiag`), and a non-low-RAM TV, including the remembered-pick restore (§3.2) against real Netflix playback.
 
 #### KI-26 · Netflix can't be identified automatically — *Confirmed on a real TV*
 * **Where**: `com.netflix.ninja` on Android TV.
 * **Issue**: Its media session has state and position but empty metadata, and its UI (drawn by Netflix's own engine) exposes no accessibility text. Neither detection strategy can learn the title.
-* **Implication**: For the most important target app, the user must search on the phone for every title, every time.
-* **Fix direction**: Remember the user's choice per app and resume it when the same app plays again; offer recent searches in the phone page; keep the matched subtitle and offset across restarts (KI-27). Don't spend effort on Netflix screen scraping.
+* **Implication**: For the most important target app, the user must search on the phone for every *new* title. Remembered picks (§3.2) now bring a title back after a restart or when resuming it, and recent picks are one tap away.
+* **Fix direction**: For series, notice an episode ending (position jumps back to ~0 after reaching the end) and offer the next episode in one tap; show a TV hint ("scan to pick subtitles") when Netflix plays and nothing is loaded. Don't spend effort on Netflix screen scraping (accessibility, events, logs and the Play Next row were all checked on a real TV and expose nothing).
 
 #### KI-2 · Only one subtitle source actually works — *Confirmed*
 * **Where**: `YtsSubtitleProvider.search` (requires `imdbId`), `OpenSubtitlesApiProvider.isEnabled` (requires an API key), `StremioSubtitleProvider.resolveImdbId`.
@@ -508,11 +514,10 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 * **Implication**: The clock can jump between two unrelated positions, and content may flip between titles.
 * **Fix direction**: Follow only the controller that is `STATE_PLAYING` (or the most recently active one), using a per-controller callback that knows its package.
 
-#### KI-27 · Subtitle offset vs. the streaming cut, and lost on restart — *Confirmed on a real TV*
-* **Where**: `TrackOffsets`, `SubtitleSession` (in memory only).
-* **Issue**: A subtitle file for the right cut ran 10.75 s ahead of Netflix's version (a different opening). The user fixed it with −/+, but the offset, the active track and the search results live only in memory: any app restart or update loses them.
-* **Implication**: The user has to search, pick and re-sync again after every restart, and "Set time" by hand is imprecise.
-* **Fix direction**: Persist the active track and its offset per content; add "tap when you hear this line" sync so the offset is found in one tap.
+#### KI-27 · Subtitle offset vs. the streaming cut — *Confirmed on a real TV (partly addressed)*
+* **Where**: `TrackOffsets`, phone page Timing card.
+* **Issue**: A subtitle file for the right cut ran 10.75 s ahead of Netflix's version (a different opening). Finding that offset takes repeated −/+ taps, and "Set time" by hand is imprecise. The offset and track are now remembered per title (§3.2), so this is needed once per title rather than after every restart.
+* **Fix direction**: "Tap when you hear this line" sync, so the offset is found in one tap.
 
 #### KI-28 · Play-state following needs an ADB grant on low-RAM TVs — *Confirmed on a real TV*
 * **Where**: `MediaSessionPoller`, setup screen step 3.
@@ -527,21 +532,16 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 * **Issue**: ~1.2% of one core on the low-RAM test TV while the page is open.
 * **Fix direction**: Poll more slowly when nothing changes, stop when the page is hidden (`visibilitychange`), or switch to a long-poll that answers only on change.
 
-#### KI-30 · Uploads are indistinguishable — *Confirmed on a real TV*
-* **Where**: `WebRemoteServer.handleUpload` names every upload "Uploaded Subtitle".
-* **Issue**: Several uploads appear as identical entries in the track list.
-* **Fix direction**: Use the uploaded file's name (sanitised) as the track title.
-
 ---
 
 ## 8. Current Project State & Next Steps
 
 * **Current Status**: Prototype / alpha.
-  * **Works today**: builds and 87 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload, track selection, per-track offset, "Set time" and subtitle style.
+  * **Works today**: builds and 102 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload (named after the file), track selection, per-track offset, "Set time", subtitle style, and remembered picks restored after restarts or from a one-tap Recent list.
   * **Open issues**: High and Medium only (§7.1). Most importantly, automatic detection and sync against real streaming apps on a physical TV is unproven (KI-1), and on the emulator accessibility auto-detection fired on the TV launcher's UI text (KI-3).
 * **Artifact Location**: release `app/build/outputs/apk/release/app-release-unsigned.apk` (~1.7 MB, R8-shrunk; needs a release signing config before distribution), debug `app/build/outputs/apk/debug/app-debug.apk` (~9.7 MB from a clean build, unshrunk; incremental debug builds leave dead space and can be much larger).
 * **Recommended Next Steps** (in order):
-  1. **Real-TV follow-up (KI-1, KI-26, KI-27)**: test Prime/Disney+/YouTube and a non-low-RAM TV; persist the active track + offset; remember choices per app; tap-to-sync.
+  1. **Real-TV follow-up (KI-1, KI-26, KI-27)**: test Prime/Disney+/YouTube, a non-low-RAM TV, and the remembered-pick restore with Netflix; next-episode offer for series; tap-to-sync.
   2. **Sourcing resilience (KI-2)**: propagate the IMDb ID so YTS works; add OpenSubtitles API-key entry.
   3. **Detection accuracy (KI-3, KI-4, KI-5, KI-6)**: explicit package allowlist, sanitizer fixes with real-title tests, candidate scoring.
   4. **Web remote hardening (KI-9)**: upload size limits and validation.

@@ -4,6 +4,7 @@ import com.altersub.core.clock.SubtitleClock
 import com.altersub.core.model.ContentMetadata
 import com.altersub.core.model.SubtitleStyle
 import com.altersub.core.model.SubtitleTrack
+import com.altersub.core.session.PickMemory
 import com.altersub.detection.DetectionSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -25,6 +26,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.net.ServerSocket
+import java.net.URLEncoder
 
 class WebRemoteServerTest {
 
@@ -42,6 +44,10 @@ class WebRemoteServerTest {
         val detections = mutableListOf<Pair<ContentMetadata, DetectionSource>>()
         val selectedTracks = mutableListOf<SubtitleTrack>()
         val uploads = mutableListOf<File>()
+        val uploadNames = mutableListOf<String>()
+        val restored = mutableListOf<String>()
+        var syncAdjustments = 0
+        var picks = emptyList<PickMemory.Pick>()
 
         override fun onContentDetected(metadata: ContentMetadata, source: DetectionSource) {
             detections += metadata to source
@@ -53,6 +59,19 @@ class WebRemoteServerTest {
 
         override fun loadDirectSrt(file: File, displayName: String) {
             uploads += file
+            uploadNames += displayName
+        }
+
+        override fun recentPicks() = picks
+
+        override fun restorePick(contentKey: String): Boolean {
+            if (picks.none { it.key == contentKey }) return false
+            restored += contentKey
+            return true
+        }
+
+        override fun onSyncAdjusted() {
+            syncAdjustments++
         }
 
         override fun updateSubtitleStyle(change: (SubtitleStyle) -> SubtitleStyle) {
@@ -143,6 +162,7 @@ class WebRemoteServerTest {
         assertEquals(60_000L, post("/api/seek?positionMs=60000").json().getLong("positionMs"))
         post("/api/seek?positionMs=abc").use { assertEquals(400, it.code) }
         post("/api/seek?positionMs=-5").use { assertEquals(400, it.code) }
+        assertEquals(2, controller.syncAdjustments) // The offset and the valid seek are remembered for the title
 
         assertTrue(post("/api/toggle-play").json().getBoolean("isPlaying"))
         assertTrue(controller.clock.isPlaying.value)
@@ -196,6 +216,7 @@ class WebRemoteServerTest {
 
         upload(srt, token).use { assertEquals(200, it.code) }
 
+        assertEquals("movie", controller.uploadNames.single()) // movie.srt, without the extension
         val saved = controller.uploads.single()
         assertEquals(uploadDir, saved.parentFile)
         assertEquals(srt, saved.readText())
@@ -316,6 +337,30 @@ class WebRemoteServerTest {
         }
         get("/fonts/app-sans-bold.ttf", token = null).use { assertEquals(404, it.code) } // Not provided by this test
         get("/fonts/../../etc/passwd", token = null).use { assertEquals(404, it.code) }
+    }
+
+    @Test
+    fun testRecentPicksAreListedAndRestoredInOneTap() {
+        fun pick(title: String, year: Int? = null) = PickMemory.Pick(
+            content = ContentMetadata(title = title, year = year),
+            track = SubtitleTrack(id = "t-$title", title = "$title [eng]", language = "eng", source = "Community", downloadUrl = "u"),
+            offsetMs = -500,
+            positionMs = 0,
+            appPackage = null,
+            updatedAt = 0
+        )
+        controller.picks = listOf(pick("Inception", 2010), pick("Dark"))
+
+        val recent = get("/api/status").json().getJSONArray("recent")
+        assertEquals(1, recent.length()) // What is loaded now (Inception) isn't offered again
+        val dark = recent.getJSONObject(0)
+        assertEquals("Dark", dark.getString("title"))
+        assertEquals("Dark [eng]", dark.getString("track"))
+        assertEquals(-500L, dark.getLong("offsetMs"))
+
+        post("/api/restore?key=" + URLEncoder.encode(dark.getString("key"), "UTF-8")).use { assertEquals(200, it.code) }
+        assertEquals(listOf("dark||"), controller.restored)
+        post("/api/restore?key=nope").use { assertEquals(404, it.code) }
     }
 
     private companion object {

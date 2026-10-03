@@ -50,6 +50,7 @@ class MediaNotificationListener : NotificationListenerService() {
 
             Log.d("MediaSessionListener", "PlaybackState changed: playing=$isPlaying, pos=$position (reported ${state.position})")
             clock.syncWithExternalPosition(position, isPlaying, speed)
+            AlterSubApp.instance.onPlaybackObserved(pkg, position, isPlaying)
         }
 
         override fun onMetadataChanged(metadata: MediaMetadata?) {

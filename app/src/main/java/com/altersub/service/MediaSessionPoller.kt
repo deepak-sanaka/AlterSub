@@ -98,6 +98,8 @@ class MediaSessionPoller(private val app: AlterSubApp, private val scope: Corout
             speed = session.speed,
             playing = playing
         )
+        app.onPlaybackObserved(session.packageName, position, playing)
+
         // Re-anchor only on a real change (pause, resume, seek, or drift beyond what's visible), so the render
         // loop isn't woken every poll
         if (playing != clock.isPlaying.value || abs(position - clock.getPositionMs()) > RESYNC_THRESHOLD_MS) {

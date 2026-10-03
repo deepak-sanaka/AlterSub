@@ -9,6 +9,7 @@ import com.altersub.core.model.ContentMetadata
 import com.altersub.core.model.SubtitleStyle
 import com.altersub.core.model.SubtitleTrack
 import com.altersub.core.parser.SubtitleIndex
+import com.altersub.core.session.PickMemory
 import com.altersub.core.session.SubtitleSession
 import com.altersub.detection.DetectionSource
 import com.altersub.provider.CompositeSubtitleProvider
@@ -33,8 +34,17 @@ class AlterSubApp : Application(), RemoteController {
     val compositeProvider = CompositeSubtitleProvider()
 
     // Created lazily: cacheDir is only available once the Application is attached
+    /** Subtitle picks (track, offset, progress per title), kept across restarts. */
+    private val pickMemory by lazy {
+        val prefs = getSharedPreferences(PICK_PREFS, MODE_PRIVATE)
+        PickMemory(object : PickMemory.Store {
+            override fun read(): String? = prefs.getString(KEY_PICKS, null)
+            override fun write(json: String) = prefs.edit().putString(KEY_PICKS, json).apply()
+        })
+    }
+
     private val session by lazy {
-        SubtitleSession(compositeProvider, clock, appScope, File(cacheDir, "subtitles")) {
+        SubtitleSession(compositeProvider, clock, appScope, File(cacheDir, "subtitles"), pickMemory) {
             startOverlayService(this)
         }
     }
@@ -170,6 +180,16 @@ class AlterSubApp : Application(), RemoteController {
 
     fun onMediaSessionsEnded() = session.onMediaSessionsEnded()
 
+    /** A streaming app's playback as seen by the media-session listener or poller. */
+    fun onPlaybackObserved(appPackage: String, positionMs: Long, playing: Boolean) =
+        session.onPlaybackObserved(appPackage, positionMs, playing)
+
+    override fun recentPicks(): List<PickMemory.Pick> = session.recentPicks()
+
+    override fun restorePick(contentKey: String): Boolean = session.restorePick(contentKey)
+
+    override fun onSyncAdjusted() = session.onSyncAdjusted()
+
     /** User picked a track on the phone remote. */
     override fun selectTrack(track: SubtitleTrack) = session.selectTrack(track)
 
@@ -182,6 +202,8 @@ class AlterSubApp : Application(), RemoteController {
         private const val KEY_TEXT_SIZE = "textSizeSp"
         private const val KEY_COLOR = "color"
         private const val KEY_POSITION = "verticalPosition"
+        private const val PICK_PREFS = "subtitle_picks"
+        private const val KEY_PICKS = "picks"
         private const val REMOTE_PREFS = "web_remote"
         private const val KEY_TOKENS = "pairedTokens"
         private const val KEY_REMOTE_ENABLED = "enabled"

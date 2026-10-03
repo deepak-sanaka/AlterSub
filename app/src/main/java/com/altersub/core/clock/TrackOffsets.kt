@@ -14,6 +14,11 @@ class TrackOffsets {
      * Records [currentOffsetMs] for the track being left and returns the offset to apply for
      * [trackId]: the one remembered for it, or 0 for a new track or when no track is active.
      */
+    /** Seeds the offset for [trackId] (e.g. one remembered from an earlier session). */
+    fun preset(trackId: String, offsetMs: Long) {
+        offsetsByTrackId[trackId] = offsetMs
+    }
+
     fun switchTo(trackId: String?, currentOffsetMs: Long): Long {
         currentTrackId?.let { offsetsByTrackId[it] = currentOffsetMs }
         currentTrackId = trackId

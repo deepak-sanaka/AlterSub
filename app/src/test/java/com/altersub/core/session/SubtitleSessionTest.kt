@@ -57,12 +57,22 @@ class SubtitleSessionTest {
     private val clock = SubtitleClock()
     private var overlayStarts = 0
 
-    private fun TestScope.newSession() = SubtitleSession(
+    // Shared by every session a test creates, like SharedPreferences across app restarts
+    private val pickStore = object : PickMemory.Store {
+        var json: String? = null
+        override fun read() = json
+        override fun write(json: String) {
+            this.json = json
+        }
+    }
+
+    private fun TestScope.newSession(clock: SubtitleClock = this@SubtitleSessionTest.clock) = SubtitleSession(
         provider = CompositeSubtitleProvider(listOf(fake)),
         clock = clock,
         // Runs on the test scheduler; each test answers every search it starts so nothing is left pending
         scope = this,
         subtitleDir = File(tempDir.root, "subtitles"),
+        picks = PickMemory(pickStore),
         onTrackActivated = { overlayStarts++ }
     )
 
@@ -188,5 +198,103 @@ class SubtitleSessionTest {
 
         fake.respond("Inception")
         advanceUntilIdle()
+    }
+
+    @Test
+    fun testATitleSeenBeforeGetsItsTrackAndOffsetBackAfterARestart() = runTest {
+        val session = newSession()
+        session.onContentDetected(ContentMetadata(title = "Inception"), DetectionSource.MANUAL)
+        advanceUntilIdle()
+        fake.respond("Inception", "inception-1", "inception-2")
+        advanceUntilIdle()
+        session.selectTrack(fake.track("inception-2"))
+        advanceUntilIdle()
+        clock.adjustOffset(-10_750L)
+        session.onSyncAdjusted()
+
+        // A new process: fresh clock and session, same saved picks
+        val restartedClock = SubtitleClock()
+        val restarted = newSession(restartedClock)
+        restarted.onContentDetected(ContentMetadata(title = "Inception"), DetectionSource.MANUAL)
+        advanceUntilIdle()
+
+        // The remembered track wins over the search's first hit, with its offset
+        assertEquals("inception-2", restarted.activeTrack.value?.id)
+        assertEquals("inception-2", restarted.shownText())
+        assertEquals(-10_750L, restartedClock.userOffsetMs.value)
+    }
+
+    @Test
+    fun testResumingTheSameAppNearTheSavedPositionRestoresThePick() = runTest {
+        val session = newSession()
+        session.onContentDetected(ContentMetadata(title = "Under a Sky"), DetectionSource.MANUAL)
+        advanceUntilIdle()
+        fake.respond("Under a Sky", "sky-1")
+        advanceUntilIdle()
+        clock.adjustOffset(-2_000L)
+        // Netflix reports no title, only playback: the pick learns which app it plays in, and how far it got
+        session.onPlaybackObserved("com.netflix.ninja", positionMs = 1_200_000L, playing = true)
+
+        val restartedClock = SubtitleClock()
+        val restarted = newSession(restartedClock)
+        restarted.onPlaybackObserved("com.netflix.ninja", positionMs = 1_260_000L, playing = true)
+        advanceUntilIdle()
+
+        assertEquals("Under a Sky", restarted.currentContent.value?.title)
+        assertEquals("sky-1", restarted.activeTrack.value?.id)
+        assertEquals(-2_000L, restartedClock.userOffsetMs.value)
+    }
+
+    @Test
+    fun testAFarAwayPositionOrAnotherAppIsNotTakenForThePick() = runTest {
+        val session = newSession()
+        session.onContentDetected(ContentMetadata(title = "Under a Sky"), DetectionSource.MANUAL)
+        advanceUntilIdle()
+        fake.respond("Under a Sky", "sky-1")
+        advanceUntilIdle()
+        session.onPlaybackObserved("com.netflix.ninja", positionMs = 1_200_000L, playing = true)
+
+        val restarted = newSession(SubtitleClock())
+        // Probably a different film: playback started from the beginning
+        restarted.onPlaybackObserved("com.netflix.ninja", positionMs = 4_000L, playing = true)
+        // A different app altogether
+        restarted.onPlaybackObserved("com.amazon.amazonvideo.livingroom", positionMs = 1_200_000L, playing = true)
+        advanceUntilIdle()
+
+        assertNull(restarted.currentContent.value)
+        assertNull(restarted.activeTrack.value)
+    }
+
+    @Test
+    fun testScreenScrapedGuessesAreNotRemembered() = runTest {
+        val session = newSession()
+        session.onContentDetected(ContentMetadata(title = "Context Menu"), DetectionSource.ACCESSIBILITY)
+        advanceUntilIdle()
+        fake.respond("Context Menu", "junk-1")
+        advanceUntilIdle()
+
+        assertEquals("junk-1", session.activeTrack.value?.id) // Still plays: it may be right
+        assertTrue(session.recentPicks().isEmpty())           // But it isn't offered again later
+    }
+
+    @Test
+    fun testRecentPicksCanBeRestoredInOneTap() = runTest {
+        val session = newSession()
+        session.onContentDetected(ContentMetadata(title = "Inception"), DetectionSource.MANUAL)
+        advanceUntilIdle()
+        fake.respond("Inception", "inception-1")
+        advanceUntilIdle()
+        session.onContentDetected(ContentMetadata(title = "Interstellar"), DetectionSource.MANUAL)
+        advanceUntilIdle()
+        fake.respond("Interstellar", "interstellar-1")
+        advanceUntilIdle()
+
+        assertEquals(listOf("Interstellar", "Inception"), session.recentPicks().map { it.content.title })
+        assertTrue(session.restorePick(session.recentPicks()[1].key))
+        advanceUntilIdle()
+
+        assertEquals("Inception", session.currentContent.value?.title)
+        assertEquals("inception-1", session.shownText())
+        assertFalse(session.restorePick("never seen||"))
     }
 }

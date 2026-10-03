@@ -101,6 +101,8 @@ object WebRemoteHtml {
     .track-name { font-weight: 500; overflow-wrap: anywhere; }
     .track-meta { margin-top: 2px; color: var(--muted); font-size: 12px; }
     .empty { padding: 14px; color: var(--muted); font-size: 13px; text-align: center; }
+    .recent-icon { flex: none; width: 18px; color: var(--accent); font-size: 17px; text-align: center; }
+    .subhead { margin: 16px 0 0; color: var(--muted); font-size: 12px; font-weight: 500; }
     .upload { width: 100%; margin-top: 10px; border-style: dashed; color: var(--muted); }
 
     .setting { display: flex; align-items: center; gap: 10px; }
@@ -174,6 +176,10 @@ object WebRemoteHtml {
                 <input type="text" id="searchInput" enterkeyhint="search" placeholder="Search a movie or show" aria-label="Search">
                 <button class="primary" type="submit">Search</button>
             </form>
+            <div id="recentBox" hidden>
+                <div class="subhead">Recent: tap to load again with its timing</div>
+                <div class="tracks" id="recentList"></div>
+            </div>
             <div class="tracks" id="trackList">
                 <div class="empty">No subtitles yet. Search for the movie or show above.</div>
             </div>
@@ -333,6 +339,7 @@ object WebRemoteHtml {
         setText('clockState', isPlaying ? 'Subtitle clock running' : 'Subtitle clock paused');
 
         renderStyle(data.style);
+        renderRecent(data.recent || []);
         renderTracks(data.tracks || [], data.activeTrackId);
     }
 
@@ -370,6 +377,37 @@ object WebRemoteHtml {
             item.append(textElement('span', 'radio', ''), text);
             list.appendChild(item);
         }
+    }
+
+    // Picks remembered on the TV (track + timing per title), newest first, minus what is loaded now
+    let lastRecentKey = '';
+    function renderRecent(recent) {
+        const key = JSON.stringify(recent);
+        if (key === lastRecentKey) return;
+        lastRecentKey = key;
+
+        document.getElementById('recentBox').hidden = recent.length === 0;
+        const list = document.getElementById('recentList');
+        list.textContent = '';
+        for (const r of recent) {
+            const item = document.createElement('div');
+            item.className = 'track';
+            item.setAttribute('role', 'button');
+            item.addEventListener('click', () => restoreRecent(r.key));
+
+            const text = document.createElement('div');
+            text.className = 'track-text';
+            const timing = r.offsetMs ? ' \u00B7 ' + (r.offsetMs < 0 ? '\u2212' : '+') + (Math.abs(r.offsetMs) / 1000).toFixed(2) + ' s' : '';
+            text.append(textElement('div', 'track-name', r.title), textElement('div', 'track-meta', r.track + timing));
+            item.append(textElement('span', 'recent-icon', '\u21BA'), text);
+            list.appendChild(item);
+        }
+    }
+
+    async function restoreRecent(key) {
+        showTrackMessage('Loading\u2026');
+        await api('/api/restore?key=' + encodeURIComponent(key));
+        setTimeout(fetchStatus, 800);
     }
 
     function showTrackMessage(message) {
