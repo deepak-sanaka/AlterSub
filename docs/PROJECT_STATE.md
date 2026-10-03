@@ -1,4 +1,4 @@
-# AlterSub — Complete Project State & Architecture Dossier
+# AlterSub — Complete Project State & Architecture
 
 > **Document Purpose**: This file serves as the single source of truth for the AlterSub project. Any LLM or developer reading this document will immediately understand the complete state of the codebase, every implemented subsystem, runtime behavior, engineering decisions, and architectural tradeoffs.
 
@@ -36,6 +36,7 @@ AlterSub/
 │   │   │   │   │       └── SubtitleIndex.kt         # O(log N) binary search index + smart sleep calculator
 │   │   │   │   ├── detection/
 │   │   │   │   │   ├── AppPackageFilter.kt          # Target streaming apps (Netflix, Prime, Disney+, etc.)
+│   │   │   │   │   ├── DetectionArbiter.kt          # Source priority: MediaSession > manual choice > accessibility
 │   │   │   │   │   └── TitleSanitizer.kt            # Regex parser for clean show title, SxxExx, year extraction
 │   │   │   │   ├── provider/
 │   │   │   │   │   ├── SubtitleProvider.kt          # Base interface for subtitle sources
@@ -54,24 +55,29 @@ AlterSub/
 │   │   │   │       ├── overlay/
 │   │   │   │       │   └── SubtitleTextView.kt      # Hardware-accelerated canvas with stroked text & auto-fit
 │   │   │   │       └── settings/
-│   │   │   │           └── MainActivity.kt          # Leanback TV dashboard, permission manager, test trigger
+│   │   │   │           └── MainActivity.kt          # AppCompat TV setup screen, permission shortcuts, test trigger
 │   │   │   └── res/
 │   │   │       ├── drawable/                        # ic_launcher, ic_launcher_banner for Android TV
-│   │   │       ├── layout/activity_main.xml         # Leanback TV setup layout
+│   │   │       ├── layout/activity_main.xml         # TV setup layout (plain Views; Leanback library is declared but unused)
 │   │   │       ├── values/                          # colors, strings, styles
 │   │   │       └── xml/accessibility_service_config.xml # Accessibility config with event throttling
 │   │   └── test/java/com/altersub/
+│   │       ├── core/clock/SubtitleClockTest.kt      # MediaSession position extrapolation
 │   │       ├── core/parser/SrtParserTest.kt         # Unit tests for SRT timestamp & cue extraction
+│   │       ├── detection/DetectionArbiterTest.kt    # Detection source priority rules
 │   │       ├── detection/TitleSanitizerTest.kt      # Unit tests for regex media title & junk filtering
+│   │       ├── provider/CompositeSubtitleProviderTest.kt # Phone uploads scoped to their content
 │   │       └── provider/StremioSubtitleProviderLiveTest.kt # Live internet test against OpenSubtitles proxy
 │   ├── build.gradle.kts                             # App module build configuration
 │   └── proguard-rules.pro                           # R8 / Proguard rules for NanoHTTPD and AlterSub models
 ├── docs/
 │   └── PROJECT_STATE.md                             # This file
-├── gradle/wrapper/                                  # Gradle 8.7 wrapper binaries & properties
+├── gradle/wrapper/                                  # Gradle 8.13 wrapper binaries & properties
+├── AGENTS.md                                        # Rules and constraints for AI agents / contributors
+├── *.png                                            # Emulator screenshots from initial verification
 ├── build.gradle.kts                                 # Root build configuration
 ├── gradle.properties                                # JVM & AndroidX memory options
-├── local.properties                                 # Android SDK path configuration
+├── local.properties                                 # Android SDK path configuration (git-ignored)
 ├── settings.gradle.kts                              # Module definitions & repository mirrors
 └── README.md                                        # User guide with one-line ADB commands
 ```
@@ -85,10 +91,11 @@ AlterSub/
 * **Window Configuration**:
   * Window type: `WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY`.
   * Flags: `FLAG_NOT_FOCUSABLE` | `FLAG_NOT_TOUCHABLE` | `FLAG_LAYOUT_IN_SCREEN` | `FLAG_LAYOUT_NO_LIMITS` | `FLAG_HARDWARE_ACCELERATED`.
-  * **Result**: Subtitles render completely transparent to the remote control. Every user click on the TV remote passes straight through to Netflix.
+  * **Result**: Subtitles render completely transparent to the remote control. Every user click on the TV remote passes straight through to Netflix. (Touchscreens are a different story — see KI-11.)
+  * The window is `MATCH_PARENT` (full screen) and the service has no stop path once started (KI-11, KI-12).
 * **Rendering View**: `SubtitleTextView`.
   * High-visibility cinema yellow text fill (`#FFE500`).
-  * 2.5dp black stroke outline (`Paint.Style.STROKE`) drawn underneath fill so text remains sharp against white backgrounds (e.g. snowy scenes, explosion flashes).
+  * Black stroke outline (`Paint.Style.STROKE`, width = text size ÷ 7) drawn underneath fill so text remains sharp against white backgrounds (e.g. snowy scenes, explosion flashes).
   * Rounded background box (`#B3000000`) for contrast.
   * Responsive scaling: Clamps line width to 90% of screen width to prevent clipping on any aspect ratio or screen size.
 
@@ -97,50 +104,67 @@ AlterSub/
   * Registers with Android's `MediaSessionManager` via `NotificationListenerService`.
   * When Netflix / Prime updates playback, OS triggers `onPlaybackStateChanged` and `onMetadataChanged`.
   * Extracts exact playback state (`STATE_PLAYING`, `STATE_PAUSED`), position (`state.position`), and speed.
+  * `state.position` is a snapshot taken at `state.lastPositionUpdateTime`; while playing it is advanced by the elapsed time × speed (`SubtitleClock.extrapolatePosition`) before calibrating the clock. An unknown position only updates play/pause.
+  * When the last target session disappears, the clock is paused and accessibility detection is re-enabled.
   * Feeds timestamp calibrations into `SubtitleClock`.
 * **Strategy B — Accessibility Inspector (`AccessibilityInspectorService`)**:
   * Listens to `TYPE_WINDOW_STATE_CHANGED` and `TYPE_WINDOW_CONTENT_CHANGED`.
   * Throttled to execute at most once every 1,500ms to eliminate CPU spikes.
-  * Recursively inspects up to 25 view hierarchy text nodes on target apps (`com.netflix.ninja`, etc.).
-  * Filters raw text through `TitleSanitizer`.
+  * Recursively inspects up to 25 view hierarchy text nodes (max depth 6) on target apps (`com.netflix.ninja`, etc.).
+  * Filters raw text through `TitleSanitizer`; the first candidate that survives is taken as the title (KI-5).
+* **Source Priority (`DetectionArbiter`)**:
+  * A live MediaSession title is authoritative; while one exists, accessibility scraping is skipped entirely.
+  * A manual search, track pick, or upload from the phone remote holds until the MediaSession reports a *different* title (e.g. autoplay to the next episode). Re-reported identical session metadata does not override it.
+  * Accessibility scraping is only a fallback when neither a session nor the user has said what is playing.
+  * On a content change, the in-flight search and download are cancelled and the previous title's subtitles are cleared, so stale results can never activate.
+  * Phone uploads are tied to the content detected at upload time and are only offered again for that same title/episode.
 * **Strategy C — Title Sanitizer (`TitleSanitizer`)**:
   * Detects and separates series patterns: `S04E01`, `Season 4 Episode 1`, `Ep 12`.
   * Detects release years: `(2023)`, `[2024]`.
   * Strips video codec tags (`1080p`, `4K`, `HDR`, `WEBRip`, `BluRay`).
-  * Ignores UI buttons (`Play`, `Resume`, `Episodes`, `Audio & Subtitles`, `Next Episode`).
+  * Ignores UI buttons (`Play`, `Resume`, `Episodes`, `Audio & Subtitles`, `Next Episode`) — exact matches only (KI-4).
 
 ### 3.3 Timing & Synchronization Engine
 * **Clock Model (`SubtitleClock`)**:
   * Master clock uses `SystemClock.elapsedRealtime()` (monotonic hardware timer unaffected by system time changes).
   * Formula: $\text{CurrentTime} = \text{basePosition} + (\Delta t \times \text{speed}) + \text{userOffsetMs}$.
-  * Supports manual offsets (`adjustOffset(+250ms)`, `adjustOffset(-1000ms)`).
+  * Supports manual offsets (`adjustOffset(+250ms)`, `adjustOffset(-1000ms)`) and manual seeks (`seekTo`, driven by the web remote's "Set time").
+  * All mutators are `@Synchronized`: the clock is written from the main thread (MediaSession), web server threads, and read by the render loop.
 * **Smart Sleep Ticker (`SubtitleIndex`)**:
-  * Instead of a battery-draining 60 FPS animation loop, the index calculates the exact millisecond distance to the end of the active cue or the start of the next cue:
-    $$\Delta t = \min(\text{activeCue.endTime} - \text{time}, \text{nextCue.startTime} - \text{time})$$
-  * The overlay thread sleeps until $\Delta t$ expires. During long scenes with no subtitle changes, CPU usage is **0%**.
+  * Instead of a 60 FPS animation loop, the index calculates the distance to the next subtitle boundary:
+    * Inside a cue: time until that cue ends.
+    * Between cues: time until the next cue starts.
+  * The result is clamped to 50–1000ms, and the overlay loop further clamps its sleep to 40–500ms. In practice the loop wakes **at least twice per second** while the service is alive (KI-13). This is cheap, but it is not the "0% CPU" originally claimed.
+  * Overlapping cues are not handled: the intended $\min(\text{activeCue.end}, \text{nextCue.start})$ is not implemented (KI-15).
 
 ### 3.4 Multi-Source Subtitle Sourcing (`CompositeSubtitleProvider`)
-Searches all sources concurrently using Kotlin coroutines `async { ... }`:
+Searches all sources concurrently using Kotlin coroutines `async { ... }`.
+> ⚠️ In the current build **only the Stremio source can return results** in the automatic flow (KI-2).
+
 1. **Stremio Community Mirror (`StremioSubtitleProvider`)**:
    * Queries `https://opensubtitles-v3.strem.io/subtitles/{type}/{imdb_id}.json`.
-   * If IMDb ID is missing, auto-resolves via `https://v3-cinemeta.strem.io/catalog/...`.
-   * **Zero API key, zero user registration, free and unlimited personal use.**
+   * If IMDb ID is missing, auto-resolves via `https://v3-cinemeta.strem.io/catalog/...` (first search hit wins). The resolved ID is not written back to `ContentMetadata`.
+   * No API key or registration. This is a public third-party service with no published usage guarantees.
+   * The download URLs return UTF-8-converted files (`subencoding-stremio-utf8`).
 2. **YTS Mirror (`YtsSubtitleProvider`)**:
    * Queries `https://yts-subs.com/api/v1/movie/{imdb_id}` for movies.
    * Downloads and unpacks zipped `.srt` files on the fly.
+   * **Currently unreachable**: it requires an IMDb ID, which detection never provides (KI-2). The endpoint itself has not been verified.
 3. **Official OpenSubtitles REST API (`OpenSubtitlesApiProvider`)**:
    * Interfaces with `https://api.opensubtitles.com/api/v1/subtitles`.
-   * Activated if the user provides an API key in settings.
+   * Enabled only when an API key is set via `updateCredentials()`. **Nothing calls it and there is no settings UI**, so it is never enabled (KI-2).
 4. **Phone Companion Upload**:
-   * Receives user-uploaded `.srt` files from phone and prioritizes them.
+   * Receives user-uploaded `.srt` files from the phone and activates them immediately.
+   * Each upload is tied to the content detected at upload time and offered first only when that same title/episode is detected again.
 
 ### 3.5 Embedded Phone Web Remote (`WebRemoteServer` & `WebRemoteHtml`)
-* Runs a micro HTTP server via NanoHTTPD on port `8080`.
-* Accessible from any phone on the same Wi-Fi network at `http://<tv-ip>:8080`.
+* Runs a micro HTTP server via NanoHTTPD on port `8080`, started in `AlterSubApp.onCreate` and never stopped.
+* Accessible from any phone on the same Wi-Fi network at `http://<tv-ip>:8080`, **with no authentication** (KI-7, KI-8).
 * **Endpoints**:
   * `GET /`: Serves complete, zero-dependency dark-mode HTML/CSS/JS remote.
-  * `GET /api/status`: Returns JSON with active movie title, active subtitle track, +/- ms offset, play state, and track candidates.
+  * `GET /api/status`: Returns JSON with active movie title, active subtitle track, +/- ms offset, clock position (`positionMs`, excluding offset), play state, and track candidates.
   * `POST /api/offset?delta=<ms>`: Fine-tunes subtitle sync delay.
+  * `POST /api/seek?positionMs=<ms>`: Sets the clock to the player's on-screen time (for apps that don't publish a MediaSession position). The remote accepts `41:23` / `1:05:10` input.
   * `POST /api/toggle-play`: Manually forces clock play/pause.
   * `POST /api/select-track?id=<id>`: Switches active subtitle track with 1 tap.
   * `POST /api/search?q=<query>`: Triggers manual search for any title.
@@ -154,32 +178,53 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`:
 | :--- | :--- | :--- |
 | **1. No Screen Capture / MediaProjection** | Netflix and Prime Video run Widevine L1 DRM with `FLAG_SECURE`. Any screen recording/capture returns a completely black frame (`#000000`). Attempting continuous frame capture and OCR would fail and melt a low-spec Android TV SoC. | **Tradeoff**: Cannot do visual OCR or video perceptual hashing. **Mitigation**: Used hybrid MediaSession tokens + Accessibility view scraping. |
 | **2. Pure Custom View over Jetpack Compose for Overlay** | Android TV 9 with 1GB RAM suffers heavy GC pauses and frame drops if Compose runtime is loaded into a persistent overlay window. Compose requires 15MB+ heap and periodic recomposition allocations. | **Tradeoff**: UI had to be written in standard Android Canvas drawing code (`onDraw`, `TextPaint`), but memory footprint dropped from ~20MB to **< 1MB**. |
-| **3. Smart Sleep vs 60 FPS Animation Loop** | Subtitles change every few seconds, not every 16ms. Running an endless 60 FPS tick causes continuous CPU wakeups. | **Tradeoff**: Minor complexity in calculating transition boundaries (`getTimeUntilNextChange`), but drops CPU usage to **0.0%** during video playback. |
-| **4. Zero-Auth Community Proxy as Default Subtitle Source** | Requiring users to sign up for OpenSubtitles API keys, manage rate limits, or pay for VIP access creates friction. | **Tradeoff**: Relies on public Stremio community proxy availability. **Mitigation**: Implemented `CompositeSubtitleProvider` with YTS, optional official API keys, and offline phone `.srt` uploads. |
+| **3. Smart Sleep vs 60 FPS Animation Loop** | Subtitles change every few seconds, not every 16ms. Running an endless 60 FPS tick causes continuous CPU wakeups. | **Tradeoff**: Minor complexity in calculating transition boundaries (`getTimeUntilNextChange`). **Status**: wakeups are capped at ≤500ms, so the loop still ticks ≥2×/s (KI-13). |
+| **4. Zero-Auth Community Proxy as Default Subtitle Source** | Requiring users to sign up for OpenSubtitles API keys, manage rate limits, or pay for VIP access creates friction. | **Tradeoff**: Relies on public Stremio community proxy availability. **Intended mitigation**: `CompositeSubtitleProvider` with YTS, optional official API keys, and phone `.srt` uploads. **Status**: YTS and the official API are not reachable yet (KI-2), so only uploads back up Stremio today. |
 | **5. Embedded Phone Web Remote (Port 8080)** | Entering text queries and adjusting millisecond subtitle sync on TV remotes with a D-pad is painfully slow. | **Tradeoff**: Runs a micro-server daemon inside the app. **Mitigation**: Uses NanoHTTPD (50KB binary, < 2MB RAM) rather than a heavy framework like Ktor Server. |
-| **6. Dual Launcher Intent Filters** | AlterSub declares both `LEANBACK_LAUNCHER` and standard `LAUNCHER`. | Allows the app to be launched, tested, and inspected on standard Android phones, tablets, emulators, and Android TV boxes without code changes. |
+| **6. Dual Launcher Intent Filters** | AlterSub declares both `LEANBACK_LAUNCHER` and standard `LAUNCHER`. | Allows the app to be launched, tested, and inspected on standard Android phones, tablets, emulators, and Android TV boxes without code changes. **Caveat**: on Android 12+ touch devices the full-screen overlay is expected to block touches to other apps (KI-11). |
+| **7. MediaSession as the Authority for Content** | Scraped screen text is noisy (row headers, menus); the session title is what the player itself reports. | **Tradeoff**: a session that reports a generic or partial title (e.g. just the app name) now overrides accessibility scraping (KI-6). The user can still override it via manual search. |
 
 ---
 
 ## 5. Verification & Test Status
 
 ### 5.1 Automated Unit Tests
-* **Test Runner**: Gradle JUnit 4 test runner with `org.json` JVM mocking enabled.
+* **Test Runner**: Gradle JUnit 4 on the JVM, with the real `org.json` artifact on the test classpath (Android's stub would throw).
+* **Status (2026-10-03)**: 22 tests, all passing. One of them needs internet access (KI-21).
 * **Test Suites**:
+  * [`DetectionArbiterTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/DetectionArbiterTest.kt): MediaSession outranks scraping; a manual choice holds until the session title changes; scraping resumes after sessions end. (Passes)
+  * [`SubtitleClockTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/clock/SubtitleClockTest.kt): MediaSession position extrapolation (elapsed time × speed, paused, missing/future snapshot, zero speed). (Passes)
+  * [`CompositeSubtitleProviderTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/provider/CompositeSubtitleProviderTest.kt): phone uploads are only offered for their own content; uploads with no detected content are never re-offered. (Passes)
   * [`SrtParserTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/parser/SrtParserTest.kt): Verifies timestamp conversions (`00:01:23,456` $\rightarrow$ ms), multi-line cues, HTML tag cleanup (`<i>`, `<b>`), and binary search interval queries. (Passes)
   * [`TitleSanitizerTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/TitleSanitizerTest.kt): Verifies regex extraction of `Stranger Things S04E01`, `Wednesday Season 1 Episode 3`, `Inception (2010)`, and rejection of UI junk like `Audio & Subtitles`. (Passes)
   * [`StremioSubtitleProviderLiveTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/provider/StremioSubtitleProviderLiveTest.kt): Live integration test connecting to the internet, querying for "Inception" (`tt1375666`), and returning 5 real English `.srt` download URLs without authentication. (Passes)
 
 ### 5.2 Device & Emulator Verification
-* **Device Tested**: `Medium_Phone_API_35` (Android 15 / API 35 x86_64).
+* **Device Tested**: `Medium_Phone_API_35` (Android 15 / API 35 x86_64) **only**. This is a phone emulator, not a TV.
 * **Overlay Verification**:
-  * Tested live on screen. Screenshot captured at [`overlay_perfect.png`](file:///c:/Users/deepa/AlterSub/overlay_perfect.png).
+  * Tested with the in-app "Test Subtitle Overlay" button, rendering over AlterSub's own settings screen. Screenshot captured at [`overlay_perfect.png`](file:///c:/Users/deepa/AlterSub/overlay_perfect.png).
   * Confirmed: High-contrast yellow stroked text, centered bounding box, auto-scaling, and proper layering over system views.
 * **Web Remote Verification**:
   * Port forwarded host `tcp:8888` to emulator `tcp:8080`.
   * Verified HTTP GET `/` returns HTML.
   * Verified HTTP POST `/api/offset?delta=500` updates internal monotonic clock to `500ms`.
   * Verified HTTP GET `/api/status` returns live JSON payload.
+* **Web Remote Verification (2026-10-03, same emulator)**:
+  * `POST /api/seek?positionMs=2483000` set the clock to 41:23, and it advanced in real time once started. Invalid or negative input returns 400.
+  * Typing `1:05:10` into the remote's "Set time" field (mobile viewport) set the clock to 1:05:10.
+  * Upload scoping:
+    1. Search "Inception", then upload an `.srt` (the upload activates).
+    2. Search "Interstellar" (Interstellar's own track activates; the upload does not follow).
+    3. Search "Inception" again (the upload is offered first and re-activated).
+  * Back-to-back searches (three pairs): only the second title's track was activated each time, and no tracks from the first search leaked into the list.
+
+### 5.3 Not Yet Verified
+* Any physical Android TV device, and Android 9 / API 28 on any device.
+* Any real streaming app: Netflix, Prime Video, Disney+, Hotstar, YouTube.
+* MediaSession detection and position sync, accessibility title scraping, and the `DetectionArbiter` rules on a device. These are only covered by JVM unit tests.
+* Overlay rendering over DRM-protected video, and performance and memory on 1GB-RAM hardware.
+
+See KI-1.
 
 ---
 
@@ -215,10 +260,199 @@ adb -s <TV_IP>:5555 shell "appops set com.altersub SYSTEM_ALERT_WINDOW allow && 
 
 ---
 
-## 7. Current Project State & Next Steps
+## 7. Known Issues & Implications
 
-* **Current Status**: Complete, fully functional, unit-tested, and verified on device.
-* **Artifact Location**: `app/build/outputs/apk/debug/app-debug.apk` (10.8 MB).
+> Last reviewed **2026-10-03** (full code review + emulator testing). Each issue has a stable ID (`KI-n`) so commits, docs and agents can reference it.
+>
+> * **Severity**:
+>   * **High**: the core flow (detect → find → sync) can fail or show the wrong subtitles on a real device.
+>   * **Medium**: security/privacy exposure, or a platform behaviour that degrades the experience.
+>   * **Low**: robustness, performance hygiene, testing, or docs.
+> * **Status**:
+>   * **Confirmed**: verified in code and/or reproduced.
+>   * **Expected**: follows from platform rules, not yet reproduced on a device.
+
+### 7.1 Summary
+
+| ID | Severity | Area | Issue |
+| :--- | :--- | :--- | :--- |
+| KI-1 | High | Verification | Never run on a TV, on API 28, or with any streaming app |
+| KI-2 | High | Sourcing | Only the Stremio source can return results; YTS and official API unreachable |
+| KI-3 | High | Detection | App package filter matches the TV launcher, Settings, and other non-streaming apps |
+| KI-4 | High | Detection | `TitleSanitizer` turns sequels into episodes and misreads numbers as years |
+| KI-5 | High | Detection | Accessibility takes the first surviving text node as the title |
+| KI-6 | Medium | Detection | MediaSession title is trusted even if generic or partial |
+| KI-7 | Medium | Security | Web remote is unauthenticated, LAN-wide, and always on |
+| KI-8 | Medium | Security | Stored XSS in the web remote's track list |
+| KI-9 | Medium | Security | Uploads have no size limit or content validation |
+| KI-10 | Medium | Privacy / Distribution | Accessibility service watches every app and requests unused capabilities |
+| KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
+| KI-12 | Medium | Platform | Overlay foreground service never stops once started |
+| KI-13 | Low | Performance | Render loop wakes ≥2×/s; "0% CPU" not achieved |
+| KI-14 | Low | Performance | Allocations in `onDraw` and per-line regex compilation in the parser |
+| KI-15 | Low | Parsing | UTF-8 only, overlapping cues, malformed SRT, partial VTT |
+| KI-16 | Low | Platform | Background foreground-service start may break when `targetSdk` is raised |
+| KI-17 | Low | UI | TV setup screen shows only 1 of 3 permission states; no subtitle style settings |
+| KI-18 | Medium | Timing | Multiple active media sessions all drive the same clock |
+| KI-19 | Low | Timing | User sync offset carries over to the next title |
+| KI-20 | Low | Networking | Three OkHttp clients, unclosed failed responses, non-cancellable blocking calls |
+| KI-21 | Low | Testing | Live-network test runs in the mandatory unit-test task |
+| KI-22 | Low | Testing | No tests for sleep calculation, provider parsing, web server, orchestration |
+| KI-24 | Low | Build / Config | Unused Leanback dependency; unnecessary `usesCleartextTraffic` |
+
+### 7.2 High Severity
+
+#### KI-1 · Never verified on the target platform — *Confirmed*
+* **Issue**: All device testing so far ran on a phone emulator (API 35), using the in-app test button and the web remote. Nothing has run on Android TV, API 28, 1GB hardware, or alongside any streaming app.
+* **Implication**: The project's central premise is unproven. That premise is that Netflix/Prime/Disney+ on Android TV publish a MediaSession with a usable title and position, or expose title text to accessibility. If they don't, automatic detection and sync do nothing. The user is left with manual search plus "Set time", which does work.
+* **Fix direction**: Install on a real TV, enable verbose logging in `MediaNotificationListener` and `AccessibilityInspectorService`, and record what each target app actually reports (title keys, position updates, `lastPositionUpdateTime`). This result should drive the priority of KI-3 to KI-6.
+
+#### KI-2 · Only one subtitle source actually works — *Confirmed*
+* **Where**: `YtsSubtitleProvider.search` (requires `imdbId`), `OpenSubtitlesApiProvider.isEnabled` (requires an API key), `StremioSubtitleProvider.resolveImdbId`.
+* **Issue**:
+  * Detection never sets `ContentMetadata.imdbId`. Stremio resolves an IMDb ID through Cinemeta but keeps it private, so YTS always returns nothing.
+  * `OpenSubtitlesApiProvider.updateCredentials()` is never called and there is no UI to enter a key, so the official API is never enabled.
+* **Implication**:
+  * Every automatic search depends on two public Stremio endpoints (`opensubtitles-v3.strem.io`, `v3-cinemeta.strem.io`). If they are down, rate-limited or change format, no subtitles are found and there is no fallback.
+  * The "multi-source" resilience described in §3.4 and §4 does not exist yet.
+  * Cinemeta's first search hit is used unconditionally, so ambiguous titles can resolve to the wrong film.
+* **Fix direction**: Resolve the IMDb ID once (in the composite or a resolver) and pass it to all providers. Add API-key entry, e.g. a web remote settings card persisted to `SharedPreferences`. Consider year-aware candidate selection.
+
+#### KI-3 · Package filter is far too broad — *Confirmed*
+* **Where**: `AppPackageFilter.isTargetApp` accepts any package containing `video`, `media`, or `tv`.
+* **Issue**: This matches `com.google.android.tvlauncher`, `com.google.android.apps.tv.launcherx` (Google TV home), `com.android.tv.settings`, media providers, and any music or IPTV app with those substrings.
+* **Implication**:
+  * Accessibility scraping runs on the home screen and Settings when no media session is active. It searches for row titles like "For you" or "Apps", wasting network calls and potentially activating wrong subtitles.
+  * Sessions from unrelated apps (e.g. a music app) can drive the clock and content (see KI-18).
+* **Fix direction**: Use the explicit package allowlist only. Optionally let the user add packages from the web remote.
+
+#### KI-4 · TitleSanitizer misparses common movie titles — *Confirmed (reproduced with the same regexes)*
+* **Issue**:
+  * The standalone-episode regex `(?:e|ep|episode)\s*(\d{1,3})` has no word boundary, so `Despicable Me 2` and `The Lego Movie 2` become S1E2, and `Se7en` becomes S1E7.
+  * The year regex takes in-title numbers: `Blade Runner 2049` gets year 2049 and is shortened to "Blade Runner", and `Wonder Woman 1984` gets year 1984.
+  * The UI-junk filter is an exact-match list, so `Trending Now`, `My List` and `Continue Watching` pass as titles.
+* **Implication**:
+  * Sequels are searched as TV series, which skips YTS and usually finds nothing or the wrong thing.
+  * Scraped menu text becomes "content".
+  * Manual searches are deliberately *not* run through the sanitizer until this is fixed.
+* **Fix direction**:
+  * Require word boundaries and an explicit episode token (`\bE\d`, `\bEp\.?\s*\d`, `\bEpisode\s+\d`).
+  * Only treat parenthesised or bracketed years, or trailing years, as release years.
+  * Expand the junk filter to prefix/contains rules.
+  * Add tests with real sequel titles.
+
+#### KI-5 · Accessibility picks the first surviving text as the title — *Confirmed*
+* **Where**: `AccessibilityInspectorService.inspectNodeHierarchy`.
+* **Issue**: Text nodes are collected depth-first (max depth 6, max 25 nodes), and the first one the sanitizer doesn't reject wins. There is no notion of "title card", font size, or position.
+* **Implication**: The fallback detector is essentially random on rich UIs, and depth 6 may be too shallow for modern players. Since KI-1 is unverified, it's unknown whether this path ever finds the real title.
+* **Fix direction**:
+  * Score candidates (SxxExx present, length, node class/viewId hints per app).
+  * Require the same title to be seen twice before switching.
+  * Add per-app view-ID rules once real hierarchies are captured.
+
+### 7.3 Medium Severity
+
+#### KI-6 · MediaSession title is trusted blindly — *Expected (design trade-off)*
+* **Issue**: `DetectionArbiter` makes any sanitized session title authoritative and disables scraping while the session lives. Some apps may report only the app name, an episode name without the show (with the show in `METADATA_KEY_ARTIST`/`ALBUM`), or a localized title.
+* **Implication**: A bad session title triggers a wrong search, and the accessibility fallback can't correct it. The user must manual-search, and that choice holds until the session title changes.
+* **Fix direction**: Reject titles equal to the app label, and combine `TITLE` with `ARTIST`/`ALBUM`/`DISPLAY_SUBTITLE` per app. Validate on device (KI-1).
+
+#### KI-7 · Web remote is open to the whole LAN — *Confirmed*
+* **Where**: `AlterSubApp.onCreate` starts NanoHTTPD on `0.0.0.0:8080`, with no stop path.
+* **Issue**: There is no PIN or token. The accessibility and notification services keep the process alive, so the server effectively runs permanently.
+* **Implication**:
+  * Anyone on the same network (guest Wi-Fi, housemates, a compromised IoT device) can upload files, trigger searches, change sync, or select tracks.
+  * Port 8080 is a common default (e.g. Kodi's web interface). If it's taken, the server fails to start, and that is only logged, so the TV still shows the URL.
+* **Fix direction**:
+  * Show a short PIN or QR code with a token on the TV, and require it on `/api/*`.
+  * Bind only while the overlay is active, or offer an off switch.
+  * Fall back to another port and display the one actually bound.
+
+#### KI-8 · Stored XSS in the web remote — *Confirmed*
+* **Where**: `renderTracks()` in `WebRemoteHtml.kt` builds HTML with unescaped `t.title`, `t.source`, `t.id` and `t.language`.
+* **Issue**: Track titles come from OpenSubtitles release names (uploader-controlled), manual search queries, and scraped screen text.
+* **Implication**:
+  * A crafted release name or search query runs script in every phone viewing the remote. That script can drive all the unauthenticated endpoints (KI-7).
+  * Titles containing `<` or `'` also break the list or the `onclick` handler.
+* **Fix direction**: Build the list with `document.createElement` + `textContent`, and attach handlers with `addEventListener`.
+
+#### KI-9 · Uploads are not limited or validated — *Confirmed*
+* **Where**: `WebRemoteServer.handleUpload`.
+* **Issue**: There is no size cap. Any file is saved as `.srt` in `cacheDir/uploads`, and a file that parses to 0 cues is still marked active. The page offers `.vtt`, but VTT timestamps without hours are dropped (KI-15). Neither `cacheDir/uploads` nor `cacheDir/subtitles` is ever pruned.
+* **Implication**:
+  * Large uploads can exhaust storage on low-storage TV boxes.
+  * The remote shows "Active: Uploaded Subtitle" while nothing ever renders.
+* **Fix direction**: Reject uploads over ~2MB. Reject files that parse to 0 cues, and report the error to the phone. Prune old cache files.
+
+#### KI-10 · Accessibility service scope and policy risk — *Confirmed*
+* **Where**: `res/xml/accessibility_service_config.xml`.
+* **Issue**: There is no `android:packageNames` restriction, so the service receives events from every app. It uses `flagIncludeNotImportantViews`, and declares `canRequestFilterKeyEvents` and `typeViewClicked` without using them.
+* **Implication**:
+  * There is extra CPU on every UI event system-wide. The arbiter now skips the tree walk while a session or manual choice is active, but events are still delivered.
+  * The privacy surface is broader than necessary.
+  * Google Play's AccessibilityService policy is likely to reject this non-accessibility use, so distribution is realistically sideload-only.
+* **Fix direction**: Set `packageNames` to the streaming allowlist (KI-3), and remove the unused capabilities and event types.
+
+#### KI-11 · Full-screen overlay window — *Expected (not reproduced)*
+* **Where**: `SubtitleOverlayService.attachOverlay` uses `MATCH_PARENT × MATCH_PARENT`, window alpha 1.0.
+* **Issue**: Android 12+ blocks touches that pass through `TYPE_APPLICATION_OVERLAY` windows whose window opacity is above 0.8. This is based on window alpha, not pixel transparency.
+* **Implication**:
+  * On phones and tablets (Decision #6), touches to other apps are expected to be blocked while the overlay is up. TV D-pad input is unaffected.
+  * On TVs, a full-screen translucent layer over secure video may cost extra compositing work on weak SoCs.
+* **Fix direction**: Use a bottom-anchored window sized to the subtitle area, or set `layoutParams.alpha = 0.8f`.
+
+#### KI-12 · Overlay service never stops — *Confirmed*
+* **Issue**: No code path calls `stopSelf()` or `stopService()`. After the first activation, the foreground notification, overlay window and render loop live until the process dies.
+* **Implication**: A persistent notification, a permanent window layer, and periodic wakeups (KI-13), even with no content playing.
+* **Fix direction**: Stop the service when there has been no subtitle index and no active session for N minutes, or when the user disables it from the remote.
+
+#### KI-18 · Multiple media sessions share one clock — *Confirmed*
+* **Where**: `MediaNotificationListener` registers one callback on every target controller.
+* **Issue**: If two target apps have active sessions (e.g. YouTube paused in the background while Netflix plays), both feed `syncWithExternalPosition` and `onContentDetected`.
+* **Implication**: The clock can jump between two unrelated positions, and content may flip between titles.
+* **Fix direction**: Follow only the controller that is `STATE_PLAYING` (or the most recently active one), using a per-controller callback that knows its package.
+
+### 7.4 Low Severity
+
+| ID | Issue | Implication | Fix direction |
+| :--- | :--- | :--- | :--- |
+| KI-13 | `SubtitleIndex` clamps sleeps to 50–1000ms and the overlay loop to 40–500ms, posting a Runnable every tick (even with no index: 1 tick/s). | ≥2 wakeups/s while the service lives. Cheap, but contradicts AGENTS.md Rule 3's intent and README's "0% CPU" claim. | Wake the loop when the clock or index changes (Flow/Channel), then sleep exactly until the next boundary. |
+| KI-14 | `SubtitleTextView.onDraw` calls `split("\n")` on every draw; `SrtParser.cleanHtmlTags` compiles a new `Regex` for every text line. | Violates AGENTS.md Rule 2 and the "zero-allocation" claims. Minor GC pressure on 1GB devices (`onDraw` runs only on cue change). | Split once in `setSubtitle`; precompile the regex as a field. |
+| KI-15 | Parser reads UTF-8 only; overlapping cues aren't supported (binary search returns one; sleep ignores the next start inside an active cue); a missing blank line merges cues; VTT `mm:ss.mmm` timestamps are dropped. | Garbled accents in YTS or phone files; missing lines in SDH subtitles; some uploads silently show nothing. | Charset detection (BOM/heuristic, fall back to Windows-1252); an index that handles overlaps; a proper VTT timestamp path. |
+| KI-16 | The overlay foreground service is started from background contexts (detection callbacks, web server). That works today at `targetSdk 34`, presumably via the overlay-permission/bound-service exemptions. | Raising `targetSdk` to 35 tightens the overlay-permission exemption (a visible overlay window is required first), which could throw `ForegroundServiceStartNotAllowedException`. | Re-test background start when bumping `targetSdk`; keep the service alive rather than starting it on demand. |
+| KI-17 | `MainActivity` refreshes only the overlay permission status. `tvAccessibilityStatus`/`tvNotificationStatus` are never updated. `setTextSizeSp`/`setTextColor` exist but nothing calls them. | Users can't tell from the TV whether detection is enabled. Subtitle size and colour can't be customised. | Check enabled services in `onResume`; expose size, colour and position in the web remote. |
+| KI-19 | `userOffsetMs` is not reset when content changes. | An offset tuned for one release carries over, so the next title starts out of sync. | Reset (or remember per content key) on content change. |
+| KI-20 | Three separate `OkHttpClient` instances; non-2xx responses are never closed; blocking `execute()` ignores coroutine cancellation. | Extra threads and connection pools on 1GB devices; OkHttp leak warnings; cancelled searches still finish their HTTP calls (results are discarded). | One shared client; `response.use { }`; consider OkHttp's suspend `await` / `Call.cancel()` on cancellation. |
+| KI-21 | `StremioSubtitleProviderLiveTest` runs inside `testDebugUnitTest`, which AGENTS.md makes mandatory before every commit. | Commits are blocked when offline or when Stremio is down; the test is non-deterministic. | Move it to a separate source set/task, or guard it with `Assume` on an env flag. |
+| KI-22 | No tests for `SubtitleIndex.getTimeUntilNextChange`, provider JSON parsing, `WebRemoteServer` routes, or `AlterSubApp` orchestration. | Regressions in sync timing, provider format changes, and endpoint behaviour go unnoticed. | Unit-test the index; MockWebServer for providers; extract orchestration from `Application` for JVM tests. |
+| KI-24 | `androidx.leanback` is declared but unused; `android:usesCleartextTraffic="true"` though all outbound calls are HTTPS (inbound server traffic is unaffected by this flag). | Larger APK than necessary; cleartext is allowed for no reason. | Remove both. |
+
+### 7.5 Resolved
+
+| Date | Issue | Resolution |
+| :--- | :--- | :--- |
+| 2026-10-03 | A phone upload was prepended to *every* search, so it auto-activated for every later title. | Uploads are keyed to the content detected at upload time (`CompositeSubtitleProvider.localTracksFor`). |
+| 2026-10-03 | Concurrent searches/downloads raced; an older one finishing late could activate the wrong title's subtitles, and old subtitles stayed on screen for new content. | Search and activation jobs are cancelled on change; results are discarded if the content changed; state is cleared on change; a pending auto-pick never overrides the user's choice. |
+| 2026-10-03 | Accessibility scraping could override what the media session reported. | `DetectionArbiter`: MediaSession > manual choice > accessibility; scraping is skipped while it would be ignored. |
+| 2026-10-03 | The MediaSession position was used as-is, even though it can be stale by seconds or minutes. | Extrapolated from `lastPositionUpdateTime` × speed; an unknown position only updates play/pause. |
+| 2026-10-03 | There was no way to set the clock position if the app publishes no position. | `POST /api/seek` + "Set time" field in the web remote; `positionMs` added to `/api/status`. |
+| 2026-10-03 | `SubtitleClock` was mutated from several threads without synchronization. | Mutators and readers are `@Synchronized`; the offset is updated atomically. |
+| 2026-10-03 | **KI-23**: `architecture-plan.pdf` was an outdated, image-only design plan describing unbuilt components, and its MediaProjection OCR strategy contradicted AGENTS.md Rule 1. | Deleted. This document and AGENTS.md are the design references; the PDF remains in git history (commit `bc1e546` and earlier). |
+
+---
+
+## 8. Current Project State & Next Steps
+
+* **Current Status**: Prototype / alpha.
+  * **Works today**: builds and unit tests; the overlay renders on an emulator; the web remote works end to end, including manual search with automatic Stremio download, upload, track selection, offset, and "Set time".
+  * **Unproven**: automatic detection and sync against real streaming apps on Android TV (KI-1).
+* **Artifact Location**: `app/build/outputs/apk/debug/app-debug.apk` (~10.9 MB).
+* **Recommended Next Steps** (in order):
+  1. **Device validation (KI-1)**: real Android TV + Netflix/Prime/Disney+; record MediaSession and accessibility output per app.
+  2. **Sourcing resilience (KI-2)**: propagate the IMDb ID so YTS works; add OpenSubtitles API-key entry.
+  3. **Detection accuracy (KI-3, KI-4, KI-5, KI-6)**: explicit package allowlist, sanitizer fixes with real-title tests, candidate scoring.
+  4. **Web remote hardening (KI-7, KI-8, KI-9)**: PIN/token, escaped rendering, upload limits.
+  5. **Overlay lifecycle (KI-11, KI-12, KI-13)**: bottom-anchored window, stop when idle, event-driven render loop.
 * **Potential Future Enhancements**:
   1. **TMDb Direct API integration**: For exotic media titles where Cinemeta auto-resolution returns multiple candidates.
   2. **ASS / SSA Styled Subtitles**: Parser currently strips advanced ASS vector tags to plain text; could optionally parse colored dialogue tags.
