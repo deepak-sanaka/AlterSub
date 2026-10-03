@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlin.math.ceil
 
 /**
  * High-precision monotonic clock for subtitle playback synchronization.
@@ -23,6 +24,10 @@ class SubtitleClock {
 
     private val _userOffsetMs = MutableStateFlow(0L)
     val userOffsetMs: StateFlow<Long> = _userOffsetMs.asStateFlow()
+
+    // Bumped on every play/pause/seek/sync/offset change, so the render loop can sleep until something actually changes
+    private val _changes = MutableStateFlow(0L)
+    val changes: StateFlow<Long> = _changes.asStateFlow()
 
     /**
      * Returns the current playback position in milliseconds including the user offset.
@@ -46,6 +51,14 @@ class SubtitleClock {
     }
 
     /**
+     * Converts a span of media time into wall-clock milliseconds at the current playback speed (at least 1ms).
+     */
+    @Synchronized
+    fun realtimeFor(mediaMs: Long): Long {
+        return ceil(mediaMs / playbackSpeed.toDouble()).toLong().coerceAtLeast(1L)
+    }
+
+    /**
      * Resumes or starts the clock.
      */
     @Synchronized
@@ -53,6 +66,7 @@ class SubtitleClock {
         if (!_isPlaying.value) {
             lastAnchorRealtimeMs = SystemClock.elapsedRealtime()
             _isPlaying.value = true
+            _changes.value++
         }
     }
 
@@ -66,6 +80,7 @@ class SubtitleClock {
             basePositionMs += (elapsed * playbackSpeed).toLong()
             lastAnchorRealtimeMs = SystemClock.elapsedRealtime()
             _isPlaying.value = false
+            _changes.value++
         }
     }
 
@@ -79,6 +94,7 @@ class SubtitleClock {
         basePositionMs = externalPosMs
         lastAnchorRealtimeMs = SystemClock.elapsedRealtime()
         _isPlaying.value = playing
+        _changes.value++
     }
 
     /**
@@ -88,20 +104,25 @@ class SubtitleClock {
     fun seekTo(positionMs: Long) {
         basePositionMs = positionMs.coerceAtLeast(0L)
         lastAnchorRealtimeMs = SystemClock.elapsedRealtime()
+        _changes.value++
     }
 
     /**
      * Adjusts the manual offset by delta milliseconds (+/- 100ms, +/- 500ms, etc.).
      */
+    @Synchronized
     fun adjustOffset(deltaMs: Long) {
         _userOffsetMs.update { it + deltaMs }
+        _changes.value++
     }
 
     /**
      * Sets the exact offset value in milliseconds.
      */
+    @Synchronized
     fun setOffset(offsetMs: Long) {
         _userOffsetMs.value = offsetMs
+        _changes.value++
     }
 
     /**
@@ -113,6 +134,7 @@ class SubtitleClock {
         lastAnchorRealtimeMs = SystemClock.elapsedRealtime()
         _userOffsetMs.value = 0L
         _isPlaying.value = false
+        _changes.value++
     }
 
     companion object {

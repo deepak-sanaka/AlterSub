@@ -130,11 +130,10 @@ AlterSub/
   * Supports manual offsets (`adjustOffset(+250ms)`, `adjustOffset(-1000ms)`) and manual seeks (`seekTo`, driven by the web remote's "Set time").
   * All mutators are `@Synchronized`: the clock is written from the main thread (MediaSession), web server threads, and read by the render loop.
 * **Smart Sleep Ticker (`SubtitleIndex`)**:
-  * Instead of a 60 FPS animation loop, the index calculates the distance to the next subtitle boundary:
-    * Inside a cue: time until that cue ends.
-    * Between cues: time until the next cue starts.
-  * The result is clamped to 50–1000ms, and the overlay loop further clamps its sleep to 40–500ms. In practice the loop wakes **at least twice per second** while the service is alive (KI-13). This is cheap, but it is not the "0% CPU" originally claimed.
-  * Overlapping cues are not handled: the intended $\min(\text{activeCue.end}, \text{nextCue.start})$ is not implemented (KI-15).
+  * Instead of a 60 FPS animation loop, `getTimeUntilNextChange` returns the exact media time until the text next changes: $\min(\text{activeCue.end} + 1, \text{nextCue.start}) - \text{time}$, or `Long.MAX_VALUE` after the last cue.
+  * The overlay loop is event-driven. It collects `clock.changes` together with the active `SubtitleIndex`, and any play, pause, seek, sync, offset or track change restarts it immediately.
+  * Between changes it sleeps exactly until the next boundary, converted to wall time at the current playback speed (`SubtitleClock.realtimeFor`). While paused, or after the last cue, it doesn't wake at all, and it touches the UI thread only when the text changes.
+  * Overlapping cues: only one active cue is displayed at a time (KI-15).
 
 ### 3.4 Multi-Source Subtitle Sourcing (`CompositeSubtitleProvider`)
 Searches all sources concurrently using Kotlin coroutines `async { ... }`.
@@ -177,7 +176,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`.
 | :--- | :--- | :--- |
 | **1. No Screen Capture / MediaProjection** | Netflix and Prime Video run Widevine L1 DRM with `FLAG_SECURE`. Any screen recording/capture returns a completely black frame (`#000000`). Attempting continuous frame capture and OCR would fail and melt a low-spec Android TV SoC. | **Tradeoff**: Cannot do visual OCR or video perceptual hashing. **Mitigation**: Used hybrid MediaSession tokens + Accessibility view scraping. |
 | **2. Pure Custom View over Jetpack Compose for Overlay** | Android TV 9 with 1GB RAM suffers heavy GC pauses and frame drops if Compose runtime is loaded into a persistent overlay window. Compose requires 15MB+ heap and periodic recomposition allocations. | **Tradeoff**: UI had to be written in standard Android Canvas drawing code (`onDraw`, `TextPaint`), but memory footprint dropped from ~20MB to **< 1MB**. |
-| **3. Smart Sleep vs 60 FPS Animation Loop** | Subtitles change every few seconds, not every 16ms. Running an endless 60 FPS tick causes continuous CPU wakeups. | **Tradeoff**: Minor complexity in calculating transition boundaries (`getTimeUntilNextChange`). **Status**: wakeups are capped at ≤500ms, so the loop still ticks ≥2×/s (KI-13). |
+| **3. Smart Sleep vs 60 FPS Animation Loop** | Subtitles change every few seconds, not every 16ms. Running an endless 60 FPS tick causes continuous CPU wakeups. | **Tradeoff**: Minor complexity in calculating transition boundaries (`getTimeUntilNextChange`). **Status**: event-driven since 2026-10-03; zero wakeups while paused or between changes. |
 | **4. Zero-Auth Community Proxy as Default Subtitle Source** | Requiring users to sign up for OpenSubtitles API keys, manage rate limits, or pay for VIP access creates friction. | **Tradeoff**: Relies on public Stremio community proxy availability. **Intended mitigation**: `CompositeSubtitleProvider` with YTS, optional official API keys, and phone `.srt` uploads. **Status**: YTS and the official API are not reachable yet (KI-2), so only uploads back up Stremio today. |
 | **5. Embedded Phone Web Remote (Port 8080)** | Entering text queries and adjusting millisecond subtitle sync on TV remotes with a D-pad is painfully slow. | **Tradeoff**: Runs a micro-server daemon inside the app. **Mitigation**: Uses NanoHTTPD (50KB binary, < 2MB RAM) rather than a heavy framework like Ktor Server. |
 | **6. Dual Launcher Intent Filters** | AlterSub declares both `LEANBACK_LAUNCHER` and standard `LAUNCHER`. | Allows the app to be launched, tested, and inspected on standard Android phones, tablets, emulators, and Android TV boxes without code changes. **Caveat**: on Android 12+ touch devices the full-screen overlay is expected to block touches to other apps (KI-11). |
@@ -318,7 +317,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | KI-10 | Medium | Privacy / Distribution | Accessibility service watches every app and requests unused capabilities |
 | KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
 | KI-12 | Medium | Platform | Overlay foreground service never stops once started |
-| KI-13 | Low | Performance | Render loop wakes ≥2×/s; "0% CPU" not achieved |
 | KI-14 | Low | Performance | Allocations in `onDraw` and per-line regex compilation in the parser |
 | KI-15 | Low | Parsing | UTF-8 only, overlapping cues, malformed SRT, partial VTT |
 | KI-16 | Low | Platform | Background foreground-service start may break when `targetSdk` is raised |
@@ -435,7 +433,7 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 
 #### KI-12 · Overlay service never stops — *Confirmed*
 * **Issue**: No code path calls `stopSelf()` or `stopService()`. After the first activation, the foreground notification, overlay window and render loop live until the process dies.
-* **Implication**: A persistent notification, a permanent window layer, and periodic wakeups (KI-13), even with no content playing.
+* **Implication**: A persistent notification and a permanent window layer, even with no content playing.
 * **Fix direction**: Stop the service when there has been no subtitle index and no active session for N minutes, or when the user disables it from the remote.
 
 #### KI-18 · Multiple media sessions share one clock — *Confirmed*
@@ -448,7 +446,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 
 | ID | Issue | Implication | Fix direction |
 | :--- | :--- | :--- | :--- |
-| KI-13 | `SubtitleIndex` clamps sleeps to 50–1000ms and the overlay loop to 40–500ms, posting a Runnable every tick (even with no index: 1 tick/s). | ≥2 wakeups/s while the service lives. Cheap, but contradicts AGENTS.md Rule 3's intent and README's "0% CPU" claim. | Wake the loop when the clock or index changes (Flow/Channel), then sleep exactly until the next boundary. |
 | KI-14 | `SubtitleTextView.onDraw` calls `split("\n")` on every draw; `SrtParser.cleanHtmlTags` compiles a new `Regex` for every text line. | Violates AGENTS.md Rule 2 and the "zero-allocation" claims. Minor GC pressure on 1GB devices (`onDraw` runs only on cue change). | Split once in `setSubtitle`; precompile the regex as a field. |
 | KI-15 | Parser reads UTF-8 only; overlapping cues aren't supported (binary search returns one; sleep ignores the next start inside an active cue); a missing blank line merges cues; VTT `mm:ss.mmm` timestamps are dropped. | Garbled accents in YTS or phone files; missing lines in SDH subtitles; some uploads silently show nothing. | Charset detection (BOM/heuristic, fall back to Windows-1252); an index that handles overlaps; a proper VTT timestamp path. |
 | KI-16 | The overlay foreground service is started from background contexts (detection callbacks, web server). That works today at `targetSdk 34`, presumably via the overlay-permission/bound-service exemptions. | Raising `targetSdk` to 35 tightens the overlay-permission exemption (a visible overlay window is required first), which could throw `ForegroundServiceStartNotAllowedException`. | Re-test background start when bumping `targetSdk`; keep the service alive rather than starting it on demand. |
@@ -471,6 +468,7 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | 2026-10-03 | There was no way to set the clock position if the app publishes no position. | `POST /api/seek` + "Set time" field in the web remote; `positionMs` added to `/api/status`. |
 | 2026-10-03 | `SubtitleClock` was mutated from several threads without synchronization. | Mutators and readers are `@Synchronized`; the offset is updated atomically. |
 | 2026-10-03 | **KI-23**: `architecture-plan.pdf` was an outdated, image-only design plan describing unbuilt components, and its MediaProjection OCR strategy contradicted AGENTS.md Rule 1. | Deleted. This document and AGENTS.md are the design references; the PDF remains in git history (commit `bc1e546` and earlier). |
+| 2026-10-03 | **KI-13**: the render loop slept at most 500ms (≥2 wakeups/s) and posted to the UI thread every tick. | Event-driven loop over `clock.changes` + the active index: sleeps exactly to the next cue boundary, never wakes while paused, and posts only when the text changes. |
 
 ---
 
@@ -485,7 +483,7 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
   2. **Sourcing resilience (KI-2)**: propagate the IMDb ID so YTS works; add OpenSubtitles API-key entry.
   3. **Detection accuracy (KI-3, KI-4, KI-5, KI-6)**: explicit package allowlist, sanitizer fixes with real-title tests, candidate scoring.
   4. **Web remote hardening (KI-7, KI-8, KI-9)**: PIN/token, escaped rendering, upload limits.
-  5. **Overlay lifecycle (KI-11, KI-12, KI-13)**: bottom-anchored window, stop when idle, event-driven render loop.
+  5. **Overlay lifecycle (KI-11, KI-12)**: bottom-anchored window, stop when idle.
 * **Potential Future Enhancements**:
   1. **TMDb Direct API integration**: For exotic media titles where Cinemeta auto-resolution returns multiple candidates.
   2. **ASS / SSA Styled Subtitles**: Parser currently strips advanced ASS vector tags to plain text; could optionally parse colored dialogue tags.

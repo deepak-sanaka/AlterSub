@@ -16,8 +16,10 @@ import com.altersub.AlterSubApp
 import com.altersub.R
 import com.altersub.ui.overlay.SubtitleTextView
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 class SubtitleOverlayService : Service() {
@@ -85,27 +87,26 @@ class SubtitleOverlayService : Service() {
 
     private fun startRenderLoop() {
         renderJob?.cancel()
-        renderJob = AlterSubApp.instance.appScope.launch {
-            val app = AlterSubApp.instance
-            while (isActive) {
-                val index = app.subtitleIndex.value
-                if (index != null && index.size > 0) {
+        val app = AlterSubApp.instance
+        renderJob = app.appScope.launch {
+            var shownText = ""
+
+            // Event-driven (AGENTS.md Rule 3): any clock or track change restarts the block below immediately,
+            // so it only has to wake at cue boundaries, and never while paused or past the last cue
+            combine(app.clock.changes, app.subtitleIndex) { _, index -> index }.collectLatest { index ->
+                while (true) {
                     val currentTime = app.clock.getCurrentTimeMs()
-                    val cue = index.getCueAt(currentTime)
+                    val text = index?.getCueAt(currentTime)?.text ?: ""
 
-                    // Update UI view on Main thread
-                    subtitleView?.post {
-                        subtitleView?.setSubtitle(cue?.text ?: "")
+                    // Only touch the UI thread when the text actually changes
+                    if (text != shownText) {
+                        shownText = text
+                        subtitleView?.post { subtitleView?.setSubtitle(text) }
                     }
 
-                    // Smart sleep to save battery & CPU on Android TV 9
-                    val sleepMs = index.getTimeUntilNextChange(currentTime)
-                    delay(sleepMs.coerceIn(40L, 500L))
-                } else {
-                    subtitleView?.post {
-                        subtitleView?.setSubtitle("")
-                    }
-                    delay(1000L)
+                    val untilChange = index?.getTimeUntilNextChange(currentTime) ?: Long.MAX_VALUE
+                    if (!app.clock.isPlaying.value || untilChange == Long.MAX_VALUE) awaitCancellation()
+                    delay(app.clock.realtimeFor(untilChange))
                 }
             }
         }

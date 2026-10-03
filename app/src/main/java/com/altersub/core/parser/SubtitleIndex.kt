@@ -39,18 +39,15 @@ class SubtitleIndex(val cues: List<SubtitleCue>) {
     }
 
     /**
-     * Calculates milliseconds until the next cue transition (start or end).
-     * Used by SubtitleOverlayService to schedule sleep intervals instead of polling at 60 FPS.
+     * Milliseconds of media time until the displayed text next changes: the active cue ending or the
+     * next cue starting, whichever comes first. Returns [Long.MAX_VALUE] when nothing changes again.
+     * Used by SubtitleOverlayService to sleep exactly until the next transition instead of polling.
      */
     fun getTimeUntilNextChange(timeMs: Long): Long {
-        if (cues.isEmpty()) return 1000L
+        var untilChange = Long.MAX_VALUE
 
-        val activeCue = getCueAt(timeMs)
-        if (activeCue != null) {
-            // Wait until this cue disappears
-            val remainingInActive = activeCue.endTimeMs - timeMs
-            return remainingInActive.coerceIn(50L, 1000L)
-        }
+        // Cues are active through endTimeMs inclusive, so they disappear one millisecond later
+        getCueAt(timeMs)?.let { untilChange = it.endTimeMs + 1 - timeMs }
 
         // Find the next upcoming cue
         var low = 0
@@ -69,10 +66,7 @@ class SubtitleIndex(val cues: List<SubtitleCue>) {
             }
         }
 
-        return if (nextCue != null) {
-            (nextCue.startTimeMs - timeMs).coerceIn(50L, 1000L)
-        } else {
-            1000L // End of subtitles, check periodically
-        }
+        nextCue?.let { untilChange = minOf(untilChange, it.startTimeMs - timeMs) }
+        return untilChange
     }
 }
