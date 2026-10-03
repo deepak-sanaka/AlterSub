@@ -96,7 +96,7 @@ class SubtitleOverlayService : Service() {
             combine(app.clock.changes, app.subtitleIndex) { _, index -> index }.collectLatest { index ->
                 while (true) {
                     val currentTime = app.clock.getCurrentTimeMs()
-                    val text = index?.getCueAt(currentTime)?.text ?: ""
+                    val text = index?.getTextAt(currentTime) ?: ""
 
                     // Only touch the UI thread when the text actually changes
                     if (text != shownText) {

@@ -32,8 +32,8 @@ AlterSub/
 │   │   │   │   │   │   ├── SubtitleCue.kt           # Start/end timestamps (ms), text lines
 │   │   │   │   │   │   └── SubtitleTrack.kt         # Track metadata (source, URL, language, rating)
 │   │   │   │   │   └── parser/
-│   │   │   │   │       ├── SrtParser.kt             # High-speed UTF-8 SRT parser with HTML tag stripper
-│   │   │   │   │       └── SubtitleIndex.kt         # O(log N) binary search index + smart sleep calculator
+│   │   │   │   │       ├── SrtParser.kt             # SRT/WebVTT parser: BOM/UTF-16/Windows-1252 detection, markup + entity cleanup
+│   │   │   │   │       └── SubtitleIndex.kt         # Binary search index (overlap-aware) + next-boundary calculator
 │   │   │   │   ├── detection/
 │   │   │   │   │   ├── AppPackageFilter.kt          # Target streaming apps (Netflix, Prime, Disney+, etc.)
 │   │   │   │   │   ├── DetectionArbiter.kt          # Source priority: MediaSession > manual choice > accessibility
@@ -133,7 +133,7 @@ AlterSub/
   * Instead of a 60 FPS animation loop, `getTimeUntilNextChange` returns the exact media time until the text next changes: $\min(\text{activeCue.end} + 1, \text{nextCue.start}) - \text{time}$, or `Long.MAX_VALUE` after the last cue.
   * The overlay loop is event-driven. It collects `clock.changes` together with the active `SubtitleIndex`, and any play, pause, seek, sync, offset or track change restarts it immediately.
   * Between changes it sleeps exactly until the next boundary, converted to wall time at the current playback speed (`SubtitleClock.realtimeFor`). While paused, or after the last cue, it doesn't wake at all, and it touches the UI thread only when the text changes.
-  * Overlapping cues: only one active cue is displayed at a time (KI-15).
+  * Overlapping cues (e.g. two speakers, or a long "[music]" cue behind dialogue) are all shown, one per line, via `SubtitleIndex.getTextAt`.
 
 ### 3.4 Multi-Source Subtitle Sourcing (`CompositeSubtitleProvider`)
 Searches all sources concurrently using Kotlin coroutines `async { ... }`.
@@ -317,7 +317,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | KI-10 | Medium | Privacy / Distribution | Accessibility service watches every app and requests unused capabilities |
 | KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
 | KI-12 | Medium | Platform | Overlay foreground service never stops once started |
-| KI-15 | Low | Parsing | UTF-8 only, overlapping cues, malformed SRT, partial VTT |
 | KI-16 | Low | Platform | Background foreground-service start may break when `targetSdk` is raised |
 | KI-17 | Low | UI | TV setup screen shows only 1 of 3 permission states; no subtitle style settings |
 | KI-18 | Medium | Timing | Multiple active media sessions all drive the same clock |
@@ -407,7 +406,7 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 
 #### KI-9 · Uploads are not limited or validated — *Confirmed*
 * **Where**: `WebRemoteServer.handleUpload`.
-* **Issue**: There is no size cap. Any file is saved as `.srt` in `cacheDir/uploads`, and a file that parses to 0 cues is still marked active. The page offers `.vtt`, but VTT timestamps without hours are dropped (KI-15). Neither `cacheDir/uploads` nor `cacheDir/subtitles` is ever pruned.
+* **Issue**: There is no size cap. Any file is saved as `.srt` in `cacheDir/uploads`, and a file that parses to 0 cues is still marked active. Neither `cacheDir/uploads` nor `cacheDir/subtitles` is ever pruned.
 * **Implication**:
   * Large uploads can exhaust storage on low-storage TV boxes.
   * The remote shows "Active: Uploaded Subtitle" while nothing ever renders.
@@ -445,7 +444,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 
 | ID | Issue | Implication | Fix direction |
 | :--- | :--- | :--- | :--- |
-| KI-15 | Parser reads UTF-8 only; overlapping cues aren't supported (binary search returns one; sleep ignores the next start inside an active cue); a missing blank line merges cues; VTT `mm:ss.mmm` timestamps are dropped. | Garbled accents in YTS or phone files; missing lines in SDH subtitles; some uploads silently show nothing. | Charset detection (BOM/heuristic, fall back to Windows-1252); an index that handles overlaps; a proper VTT timestamp path. |
 | KI-16 | The overlay foreground service is started from background contexts (detection callbacks, web server). That works today at `targetSdk 34`, presumably via the overlay-permission/bound-service exemptions. | Raising `targetSdk` to 35 tightens the overlay-permission exemption (a visible overlay window is required first), which could throw `ForegroundServiceStartNotAllowedException`. | Re-test background start when bumping `targetSdk`; keep the service alive rather than starting it on demand. |
 | KI-17 | `MainActivity` refreshes only the overlay permission status. `tvAccessibilityStatus`/`tvNotificationStatus` are never updated; reproduced on the TV emulator, where both rows still said "ENABLE" while enabled. `setTextSizeSp`/`setTextColor` exist but nothing calls them. | Users can't tell from the TV whether detection is enabled. Subtitle size and colour can't be customised. | Check enabled services in `onResume`; expose size, colour and position in the web remote. |
 | KI-19 | `userOffsetMs` is not reset when content changes. | An offset tuned for one release carries over, so the next title starts out of sync. | Reset (or remember per content key) on content change. |
@@ -468,6 +466,7 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | 2026-10-03 | **KI-23**: `architecture-plan.pdf` was an outdated, image-only design plan describing unbuilt components, and its MediaProjection OCR strategy contradicted AGENTS.md Rule 1. | Deleted, and later stripped from git history along with old build output. This document and AGENTS.md are the design references. |
 | 2026-10-03 | **KI-13**: the render loop slept at most 500ms (≥2 wakeups/s) and posted to the UI thread every tick. | Event-driven loop over `clock.changes` + the active index: sleeps exactly to the next cue boundary, never wakes while paused, and posts only when the text changes. |
 | 2026-10-03 | **KI-14**: `SubtitleTextView.onDraw` split the text on every draw; `SrtParser` and `TitleSanitizer` compiled regexes on every line/call. | Lines are split once in `setSubtitle` and drawn by index (no allocation in `onDraw`); all regexes and the UI-junk set are precompiled fields. |
+| 2026-10-03 | **KI-15**: the parser read UTF-8 only, showed one of several overlapping cues, merged cues when a blank line was missing, and dropped hour-less VTT timestamps. | BOM / BOM-less UTF-16 / strict-UTF-8 detection with Windows-1252 fallback; an overlap-aware index (`getTextAt`) showing all active cues; recovery from missing separators; VTT `mm:ss.mmm`, cue settings and HTML entities. |
 
 ---
 
