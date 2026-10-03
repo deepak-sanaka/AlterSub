@@ -50,9 +50,10 @@ AlterSub/
 │   │   │   │   │   ├── OpenSubtitlesApiProvider.kt  # Official OpenSubtitles.com REST API (API key + token)
 │   │   │   │   │   └── CompositeSubtitleProvider.kt # Parallel search over a provider list & per-content upload repository
 │   │   │   │   ├── server/
+│   │   │   │   │   ├── RemoteAuth.kt                # PIN pairing + per-phone tokens for the web remote
 │   │   │   │   │   ├── RemoteController.kt          # What the web remote can read/do (AlterSubApp implements it)
 │   │   │   │   │   ├── WebRemoteHtml.kt             # Responsive dark-mode mobile web UI for remote control
-│   │   │   │   │   └── WebRemoteServer.kt           # Embedded NanoHTTPD micro-server on port 8080
+│   │   │   │   │   └── WebRemoteServer.kt           # Embedded NanoHTTPD micro-server (port 8080, falls back to 8081–8089)
 │   │   │   │   ├── service/
 │   │   │   │   │   ├── AccessibilityInspectorService.kt # View hierarchy scraper for OSD / title cards
 │   │   │   │   │   ├── MediaNotificationListener.kt # Notification listener for MediaSession play/pause tokens
@@ -75,7 +76,7 @@ AlterSub/
 │   │       ├── detection/                           # DetectionArbiterTest, TitleSanitizerTest
 │   │       ├── provider/                            # MockWebServer tests per provider, HttpAwaitTest, CompositeSubtitleProviderTest,
 │   │       │                                        #   StremioSubtitleProviderLiveTest (real network, only with -PliveTests)
-│   │       └── server/WebRemoteServerTest.kt        # Every HTTP route against a fake RemoteController
+│   │       └── server/                              # WebRemoteServerTest (every route + token checks, port fallback), RemoteAuthTest
 │   ├── build.gradle.kts                             # App module build configuration
 │   └── proguard-rules.pro                           # R8 / Proguard rules for NanoHTTPD and AlterSub models
 ├── docs/
@@ -168,10 +169,16 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
    * Each upload is tied to the content detected at upload time and offered first only when that same title/episode is detected again.
 
 ### 3.5 Embedded Phone Web Remote (`WebRemoteServer` & `WebRemoteHtml`)
-* Runs a micro HTTP server via NanoHTTPD on port `8080`, started in `AlterSubApp.onCreate` and never stopped.
-* Accessible from any phone on the same Wi-Fi network at `http://<tv-ip>:8080`, **with no authentication** (KI-7, KI-8).
+* Runs a micro HTTP server via NanoHTTPD, started in `AlterSubApp.onCreate` unless switched off on the TV.
+* **Port**: `8080`, or the first free port in `8081–8089` if it's taken (e.g. by Kodi). The TV screen shows the URL with the port actually bound, or says that none was free.
+* **Pairing** (`RemoteAuth`):
+  * The TV setup screen shows a 6-digit PIN, valid only while that screen is open. A phone that enters it gets a random 128-bit token, kept in the page's `localStorage` and sent as `X-AlterSub-Token` on every `/api/*` call.
+  * Without a valid token, every `/api/*` route except `/api/pair` returns 401 before reading the request (so unpaired uploads are never written). The page at `/` holds no data and stays public.
+  * Five wrong PINs lock pairing until the TV screen is reopened, which issues a new PIN.
+  * Up to 8 phones stay paired across restarts (tokens in `SharedPreferences`). The TV's "Phone Remote" card shows how many, and has **Unpair All** and **Turn Off / Turn On** (persisted).
 * **Endpoints**:
   * `GET /`: Serves complete, zero-dependency dark-mode HTML/CSS/JS remote.
+  * `POST /api/pair?pin=<pin>`: Exchanges the TV's PIN for a token (403 wrong PIN or screen closed, 429 locked).
   * `GET /api/status`: Returns JSON with active movie title, active subtitle track, +/- ms offset, clock position (`positionMs`, excluding offset), play state, and track candidates, plus `overlayRunning` and `overlayError`.
   * `POST /api/offset?delta=<ms>`: Fine-tunes subtitle sync delay.
   * `POST /api/seek?positionMs=<ms>`: Sets the clock to the player's on-screen time (for apps that don't publish a MediaSession position). The remote accepts `41:23` / `1:05:10` input.
@@ -191,7 +198,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
 | **2. Pure Custom View over Jetpack Compose for Overlay** | Android TV 9 with 1GB RAM suffers heavy GC pauses and frame drops if Compose runtime is loaded into a persistent overlay window. Compose requires 15MB+ heap and periodic recomposition allocations. | **Tradeoff**: UI had to be written in standard Android Canvas drawing code (`onDraw`, `TextPaint`), but memory footprint dropped from ~20MB to **< 1MB**. |
 | **3. Smart Sleep vs 60 FPS Animation Loop** | Subtitles change every few seconds, not every 16ms. Running an endless 60 FPS tick causes continuous CPU wakeups. | **Tradeoff**: Minor complexity in calculating transition boundaries (`getTimeUntilNextChange`). **Status**: event-driven since 2026-10-03; zero wakeups while paused or between changes. |
 | **4. Zero-Auth Community Proxy as Default Subtitle Source** | Requiring users to sign up for OpenSubtitles API keys, manage rate limits, or pay for VIP access creates friction. | **Tradeoff**: Relies on public Stremio community proxy availability. **Intended mitigation**: `CompositeSubtitleProvider` with YTS, optional official API keys, and phone `.srt` uploads. **Status**: YTS and the official API are not reachable yet (KI-2), so only uploads back up Stremio today. |
-| **5. Embedded Phone Web Remote (Port 8080)** | Entering text queries and adjusting millisecond subtitle sync on TV remotes with a D-pad is painfully slow. | **Tradeoff**: Runs a micro-server daemon inside the app. **Mitigation**: Uses NanoHTTPD (50KB binary, < 2MB RAM) rather than a heavy framework like Ktor Server. |
+| **5. Embedded Phone Web Remote (Port 8080)** | Entering text queries and adjusting millisecond subtitle sync on TV remotes with a D-pad is painfully slow. | **Tradeoff**: Runs a micro-server daemon inside the app, reachable from the LAN. **Mitigation**: Uses NanoHTTPD (50KB binary, < 2MB RAM) rather than a heavy framework like Ktor Server. Only phones paired with the PIN on the TV screen can use the API, and the server can be switched off on the TV. Plain HTTP, so the token is visible to anyone sniffing the Wi-Fi. |
 | **6. Dual Launcher Intent Filters** | AlterSub declares both `LEANBACK_LAUNCHER` and standard `LAUNCHER`. | Allows the app to be launched, tested, and inspected on standard Android phones, tablets, emulators, and Android TV boxes without code changes. **Caveat**: on Android 12+ touch devices the full-screen overlay is expected to block touches to other apps (KI-11). |
 | **7. MediaSession as the Authority for Content** | Scraped screen text is noisy (row headers, menus); the session title is what the player itself reports. | **Tradeoff**: a session that reports a generic or partial title (e.g. just the app name) now overrides accessibility scraping (KI-6). The user can still override it via manual search. |
 
@@ -201,13 +208,14 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
 
 ### 5.1 Automated Unit Tests
 * **Test Runner**: Gradle JUnit 4 on the JVM, with the real `org.json` artifact on the test classpath (Android's stub would throw).
-* **Status (2026-10-03)**: 67 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
+* **Status (2026-10-03)**: 80 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
 * **Test Suites**:
   * [`DetectionArbiterTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/DetectionArbiterTest.kt): MediaSession outranks scraping; a manual choice holds until the session title changes; scraping resumes after sessions end. (Passes)
   * [`SubtitleClockTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/clock/SubtitleClockTest.kt): MediaSession position extrapolation (elapsed time × speed, paused, missing/future snapshot, zero speed). (Passes)
   * [`CompositeSubtitleProviderTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/provider/CompositeSubtitleProviderTest.kt): phone uploads are only offered for their own content; uploads with no detected content are never re-offered. (Passes)
   * [`SrtParserTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/parser/SrtParserTest.kt): Verifies timestamp conversions (`00:01:23,456` $\rightarrow$ ms), multi-line cues, HTML tag cleanup (`<i>`, `<b>`), and binary search interval queries. (Passes)
   * [`TitleSanitizerTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/TitleSanitizerTest.kt): Verifies regex extraction of `Stranger Things S04E01`, `Wednesday Season 1 Episode 3`, `Inception (2010)`, and rejection of UI junk like `Audio & Subtitles`. (Passes)
+  * [`RemoteAuthTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/server/RemoteAuthTest.kt) and [`WebRemoteServerTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/server/WebRemoteServerTest.kt): PINs only while the TV screen is open, lockout after 5 wrong PINs, token persistence and the 8-phone limit; every route rejects missing/unknown tokens (an unpaired upload saves nothing and doesn't desync the connection); fallback to the next free port. (Passes)
   * [`StremioSubtitleProviderLiveTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/provider/StremioSubtitleProviderLiveTest.kt): Live integration test connecting to the internet, querying for "Inception" (`tt1375666`), and returning 5 real English `.srt` download URLs without authentication. (Passes)
 
 ### 5.2 Device & Emulator Verification
@@ -238,6 +246,12 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
   * **Memory**: `dumpsys meminfo com.altersub` showed TOTAL PSS ≈ 49 MB (Java heap 11 MB, native 17.7 MB). That was with the settings activity still in the back stack, plus the overlay, both services and the web server running.
   * **Reproduced KI-3/KI-4/KI-5**: Pressing HOME let the accessibility service scrape `com.google.android.tvlauncher` (accepted because the package name contains "tv"). It took the "CUSTOMIZE CHANNELS" button as a title, searched for it, and activated 2,007 cues of an unrelated film over the home screen, with no streaming app involved.
   * **Reproduced KI-17**: Accessibility and notification access were both enabled, yet both rows still showed "ENABLE". Since fixed (§7.5).
+  * **Web remote pairing (KI-7 fix)**:
+    * The TV screen showed the URL and a grouped PIN ("177 770"). Unpaired `/api/status` returned 401.
+    * In the phone page: a wrong PIN showed "Wrong PIN. 4 tries left." (not wiped by the status poll). The right PIN unlocked the remote; a +250 ms nudge applied, and the phone stayed paired after a reload and after force-stopping the app.
+    * With the TV screen closed (HOME), the PIN was refused. After five wrong PINs, the TV showed the lockout message and even the right PIN got 429.
+    * **Unpair All** emptied the stored tokens; the old token got 401 and the phone page fell back to the PIN prompt. D-pad focus moves to **Turn Off** instead of jumping up the screen when Unpair All disables itself.
+    * **Turn Off** stopped the server. With port 8080 held by another process, **Turn On** bound 8081, the TV showed `:8081`, and the page loaded there.
 
 ### 5.3 Not Yet Verified
 * Any physical Android TV device. API 28 has only been exercised on the emulator above.
@@ -303,6 +317,8 @@ $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'   # adjust to you
 ```
 Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN` / `KEYCODE_DPAD_CENTER` / `KEYCODE_HOME`, or with the host keyboard's arrow keys.
 
+To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the port the TV screen shows), open `http://localhost:8888`, and enter the PIN from the AlterSub screen on the TV. Scripts can pair with `curl -X POST "http://localhost:8888/api/pair?pin=<PIN>"` and send the returned token as an `X-AlterSub-Token` header.
+
 ---
 
 ## 7. Known Issues & Implications
@@ -327,7 +343,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | KI-4 | High | Detection | `TitleSanitizer` turns sequels into episodes and misreads numbers as years |
 | KI-5 | High | Detection | Accessibility takes the first surviving text node as the title |
 | KI-6 | Medium | Detection | MediaSession title is trusted even if generic or partial |
-| KI-7 | Medium | Security | Web remote is unauthenticated, LAN-wide, and always on |
 | KI-8 | Medium | Security | Stored XSS in the web remote's track list |
 | KI-9 | Medium | Security | Uploads have no size limit or content validation |
 | KI-10 | Medium | Privacy / Distribution | Accessibility service watches every app and requests unused capabilities |
@@ -393,22 +408,11 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 * **Implication**: A bad session title triggers a wrong search, and the accessibility fallback can't correct it. The user must manual-search, and that choice holds until the session title changes.
 * **Fix direction**: Reject titles equal to the app label, and combine `TITLE` with `ARTIST`/`ALBUM`/`DISPLAY_SUBTITLE` per app. Validate on device (KI-1).
 
-#### KI-7 · Web remote is open to the whole LAN — *Confirmed*
-* **Where**: `AlterSubApp.onCreate` starts NanoHTTPD on `0.0.0.0:8080`, with no stop path.
-* **Issue**: There is no PIN or token. The accessibility and notification services keep the process alive, so the server effectively runs permanently.
-* **Implication**:
-  * Anyone on the same network (guest Wi-Fi, housemates, a compromised IoT device) can upload files, trigger searches, change sync, or select tracks.
-  * Port 8080 is a common default (e.g. Kodi's web interface). If it's taken, the server fails to start, and that is only logged, so the TV still shows the URL.
-* **Fix direction**:
-  * Show a short PIN or QR code with a token on the TV, and require it on `/api/*`.
-  * Bind only while the overlay is active, or offer an off switch.
-  * Fall back to another port and display the one actually bound.
-
 #### KI-8 · Stored XSS in the web remote — *Confirmed*
 * **Where**: `renderTracks()` in `WebRemoteHtml.kt` builds HTML with unescaped `t.title`, `t.source`, `t.id` and `t.language`.
 * **Issue**: Track titles come from OpenSubtitles release names (uploader-controlled), manual search queries, and scraped screen text.
 * **Implication**:
-  * A crafted release name or search query runs script in every phone viewing the remote. That script can drive all the unauthenticated endpoints (KI-7).
+  * A crafted release name or search query runs script in every phone viewing the remote. That script runs in the remote's own origin, so it can read the pairing token from `localStorage` and drive every endpoint.
   * Titles containing `<` or `'` also break the list or the `onclick` handler.
 * **Fix direction**: Build the list with `document.createElement` + `textContent`, and attach handlers with `addEventListener`.
 
@@ -473,6 +477,7 @@ None open. All eleven low-severity issues (KI-13–17, KI-19–22, KI-24, KI-25)
 | 2026-10-03 | **KI-21**: the live Stremio test ran in `testDebugUnitTest`, which AGENTS.md requires before every commit, so commits failed offline. | Live-network tests are skipped via `Assume` unless Gradle is run with `-PliveTests` (passed to the test JVM as `altersub.liveTests`). |
 | 2026-10-03 | **KI-22**: no tests for sleep calculation, provider parsing, web server routes, or orchestration. | `SubtitleIndexTest`; MockWebServer tests for all three providers (base URLs injectable); `WebRemoteServerTest` over a `RemoteController` interface; orchestration extracted from `AlterSubApp` into `SubtitleSession` with `SubtitleSessionTest` covering stale results, user-choice precedence, upload scoping and per-track offsets. 67 tests run offline. |
 | 2026-10-03 | **KI-24**: unused `androidx.leanback` dependency and an unnecessary `usesCleartextTraffic="true"`. | Both removed, along with the unused `RECEIVE_BOOT_COMPLETED` permission (no boot receiver exists). Verified on the TV emulator: HTTPS searches/downloads, the web remote (inbound HTTP) and the TV launcher entry all still work. |
+| 2026-10-03 | **KI-7**: the web remote had no authentication and was reachable by anyone on the LAN, ran permanently with no off switch, and failed silently (while the TV still showed the URL) if port 8080 was taken. | `RemoteAuth` pairing: a 6-digit PIN shown only while the TV setup screen is open, exchanged for a per-phone token required on every `/api/*` call; 5 wrong PINs lock pairing until the screen is reopened. The TV can unpair all phones and turn the remote off (persisted). The server falls back to ports 8081–8089 and the TV shows the port actually bound. Verified on the TV emulator (§5.2). Remaining exposure: plain HTTP on the LAN, and stored XSS (KI-8) can read the token. |
 | 2026-10-03 | **KI-25**: on the TV setup screen the focused "Test Subtitle Overlay" button was mostly scrolled off-screen, and focus was only a faint shadow. | Padding moved from the `ScrollView` onto its content so focused items scroll fully into view; a `Widget.AlterSub.TvButton` style (yellow fill + black text when focused, white for the primary button, dimmed when disabled, 1.08× scale-up) with `clipToPadding="false"` so the scale isn't cropped. Verified on the 1080p TV emulator. |
 
 ---
@@ -480,14 +485,14 @@ None open. All eleven low-severity issues (KI-13–17, KI-19–22, KI-24, KI-25)
 ## 8. Current Project State & Next Steps
 
 * **Current Status**: Prototype / alpha.
-  * **Works today**: builds and 67 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: manual search with automatic Stremio download, upload, track selection, per-track offset, "Set time" and subtitle style.
+  * **Works today**: builds and 80 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: PIN pairing, manual search with automatic Stremio download, upload, track selection, per-track offset, "Set time" and subtitle style.
   * **Open issues**: High and Medium only (§7.1). Most importantly, automatic detection and sync against real streaming apps on a physical TV is unproven (KI-1), and on the emulator accessibility auto-detection fired on the TV launcher's UI text (KI-3).
 * **Artifact Location**: `app/build/outputs/apk/debug/app-debug.apk` (~10.9 MB).
 * **Recommended Next Steps** (in order):
   1. **Device validation (KI-1)**: real Android TV + Netflix/Prime/Disney+; record MediaSession and accessibility output per app.
   2. **Sourcing resilience (KI-2)**: propagate the IMDb ID so YTS works; add OpenSubtitles API-key entry.
   3. **Detection accuracy (KI-3, KI-4, KI-5, KI-6)**: explicit package allowlist, sanitizer fixes with real-title tests, candidate scoring.
-  4. **Web remote hardening (KI-7, KI-8, KI-9)**: PIN/token, escaped rendering, upload limits.
+  4. **Web remote hardening (KI-8, KI-9)**: escaped rendering, upload limits.
   5. **Overlay lifecycle (KI-11, KI-12)**: bottom-anchored window, stop when idle.
 * **Potential Future Enhancements**:
   1. **TMDb Direct API integration**: For exotic media titles where Cinemeta auto-resolution returns multiple candidates.

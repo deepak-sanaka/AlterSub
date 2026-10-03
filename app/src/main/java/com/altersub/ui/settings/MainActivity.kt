@@ -15,26 +15,37 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.view.isVisible
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.altersub.AlterSubApp
+import com.altersub.AlterSubApp.WebRemoteState
 import com.altersub.R
 import com.altersub.core.model.SubtitleCue
 import com.altersub.core.parser.SubtitleIndex
 import com.altersub.databinding.ActivityMainBinding
+import com.altersub.server.RemoteAuth
+import com.altersub.server.WebRemoteServer
 import com.altersub.service.AccessibilityInspectorService
 import com.altersub.service.MediaNotificationListener
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 import java.net.Inet4Address
 import java.net.NetworkInterface
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private var ipAddress = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        setupIpAddress()
+        ipAddress = getLocalIpAddress()
+        setupWebRemote()
         setupPermissions()
         setupTestButton()
     }
@@ -42,6 +53,9 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updatePermissionStatuses()
+
+        // Phones can only pair while this screen (and so the PIN) is showing on the TV
+        AlterSubApp.instance.remoteAuth.openPairing()
 
         // Start the overlay while we're in the foreground, where Android always allows it. On a TV it then
         // stays up, so later detections never have to start a foreground service from the background.
@@ -51,9 +65,61 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupIpAddress() {
-        val ip = getLocalIpAddress()
-        binding.tvIpAddress.text = "http://$ip:8080"
+    override fun onPause() {
+        super.onPause()
+        AlterSubApp.instance.remoteAuth.closePairing()
+    }
+
+    private fun setupWebRemote() {
+        val app = AlterSubApp.instance
+
+        binding.btnWebRemoteToggle.setOnClickListener {
+            app.setWebRemoteEnabled(app.webRemoteState.value !is WebRemoteState.Running)
+        }
+        binding.btnUnpairPhones.setOnClickListener {
+            app.remoteAuth.unpairAll()
+            Toast.makeText(this, "Phones unpaired. Enter the PIN again on a phone to use it.", Toast.LENGTH_LONG).show()
+        }
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                combine(app.webRemoteState, app.remoteAuth.pairing, app.remoteAuth.pairedCount) { state, pairing, paired ->
+                    Triple(state, pairing, paired)
+                }.collect { (state, pairing, paired) -> renderWebRemote(state, pairing, paired) }
+            }
+        }
+    }
+
+    private fun renderWebRemote(state: WebRemoteState, pairing: RemoteAuth.Pairing, paired: Int) {
+        val ports = WebRemoteServer.PORTS
+        binding.tvIpAddress.text = when (state) {
+            is WebRemoteState.Running -> "Open on your phone: http://$ipAddress:${state.port}"
+            WebRemoteState.Off -> "Phone remote is turned off"
+            WebRemoteState.Failed -> "Phone remote couldn't start: ports ${ports.first()}–${ports.last()} are all in use"
+        }
+
+        binding.tvRemotePin.isVisible = state is WebRemoteState.Running
+        binding.tvRemotePin.text = when (pairing) {
+            // Grouped as "482 913" so it's easy to read from the couch
+            is RemoteAuth.Pairing.Open -> "Pairing PIN: ${pairing.pin.chunked(3).joinToString(" ")}"
+            RemoteAuth.Pairing.Locked -> "Too many wrong PINs. Press Back and reopen AlterSub for a new PIN."
+            RemoteAuth.Pairing.Closed -> ""
+        }
+
+        binding.tvPairedPhones.text = when (paired) {
+            0 -> "No phones paired"
+            1 -> "1 phone paired"
+            else -> "$paired phones paired"
+        }
+        // Disabling the focused button would send D-pad focus jumping up the screen, so hand it to its neighbour
+        if (paired == 0 && binding.btnUnpairPhones.isFocused) binding.btnWebRemoteToggle.requestFocus()
+        binding.btnUnpairPhones.isEnabled = paired > 0
+
+        binding.btnWebRemoteToggle.text = when (state) {
+            is WebRemoteState.Running -> "Turn Off"
+            WebRemoteState.Off -> "Turn On"
+            WebRemoteState.Failed -> "Retry"
+        }
     }
 
     private fun setupPermissions() {

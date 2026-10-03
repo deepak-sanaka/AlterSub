@@ -10,16 +10,29 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 
 class WebRemoteServer(
     private val controller: RemoteController,
+    private val auth: RemoteAuth,
     private val uploadDir: File,
-    port: Int = 8080
+    port: Int = DEFAULT_PORT
 ) : NanoHTTPD(port) {
 
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri
         val method = session.method
+
+        // Every API call except pairing itself needs a paired phone's token; the page at / holds no data
+        if (uri.startsWith("/api/") && uri != "/api/pair" && !auth.isAuthorized(session.headers[RemoteAuth.TOKEN_HEADER])) {
+            return jsonResponse(
+                JSONObject().put("error", "Pair this phone with the PIN shown on the TV").put("pairingRequired", true),
+                Response.Status.UNAUTHORIZED
+            ).apply {
+                // The request body is left unread, and NanoHTTPD would parse it as the next request on a kept-alive connection
+                closeConnection(true)
+            }
+        }
 
         return try {
             when {
@@ -29,6 +42,10 @@ class WebRemoteServer(
                         "text/html; charset=UTF-8",
                         WebRemoteHtml.getHtml()
                     )
+                }
+
+                uri == "/api/pair" && method == Method.POST -> {
+                    handlePair(session.parms["pin"] ?: "")
                 }
 
                 uri == "/api/status" && method == Method.GET -> {
@@ -104,9 +121,29 @@ class WebRemoteServer(
                 }
             }
         } catch (e: Exception) {
-            Log.e("WebRemoteServer", "Request error: ${e.message}")
+            Log.e(TAG, "Request error: ${e.message}")
             jsonResponse(JSONObject().put("error", e.message), Response.Status.INTERNAL_ERROR)
         }
+    }
+
+    private fun handlePair(pin: String): Response = when (val result = auth.pair(pin)) {
+        is RemoteAuth.PairResult.Paired ->
+            jsonResponse(JSONObject().put("success", true).put("token", result.token))
+
+        is RemoteAuth.PairResult.WrongPin -> jsonResponse(
+            JSONObject().put("error", "Wrong PIN. ${result.attemptsLeft} ${if (result.attemptsLeft == 1) "try" else "tries"} left."),
+            Response.Status.FORBIDDEN
+        )
+
+        RemoteAuth.PairResult.NotOpen -> jsonResponse(
+            JSONObject().put("error", "Open AlterSub on the TV to see the PIN, then try again."),
+            Response.Status.FORBIDDEN
+        )
+
+        RemoteAuth.PairResult.Locked -> jsonResponse(
+            JSONObject().put("error", "Too many wrong PINs. Press Back on the TV, reopen AlterSub, and enter the new PIN."),
+            Response.Status.TOO_MANY_REQUESTS
+        )
     }
 
     private fun handleStatus(): Response {
@@ -177,5 +214,28 @@ class WebRemoteServer(
         status: Response.IStatus = Response.Status.OK
     ): Response {
         return newFixedLengthResponse(status, "application/json; charset=UTF-8", json.toString())
+    }
+
+    companion object {
+        private const val TAG = "WebRemoteServer"
+        const val DEFAULT_PORT = 8080
+
+        /** 8080 is a common default (Kodi's web interface uses it), so a few neighbours are tried before giving up. */
+        val PORTS = (DEFAULT_PORT..DEFAULT_PORT + 9).toList()
+
+        /** Starts a server on the first of [ports] that can be bound, or returns null if none can. */
+        fun startOnFirstFreePort(ports: List<Int>, create: (port: Int) -> WebRemoteServer): WebRemoteServer? {
+            for (port in ports) {
+                val server = create(port)
+                try {
+                    server.start()
+                    return server
+                } catch (e: IOException) {
+                    server.stop() // Closes the socket that failed to bind
+                    Log.w(TAG, "Port $port unavailable: ${e.message}")
+                }
+            }
+            return null
+        }
     }
 }

@@ -57,10 +57,20 @@
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/tvRemotePin"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="Control subtitle tracks, +/- 100ms sync timing, and upload .srt files from any phone browser on the same Wi-Fi."
+                android:text="Pairing PIN: ······"
+                android:textColor="@color/text_main"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Pick subtitle tracks, fine-tune sync, and upload .srt files from a phone browser on the same Wi-Fi. Enter the PIN on the phone once to pair it; only paired phones can control AlterSub."
                 android:textColor="@color/text_secondary"
                 android:textSize="13sp" />
         </LinearLayout>
@@ -219,6 +229,56 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="🎬 Test Subtitle Overlay" />
+        </LinearLayout>
+
+        <!-- Phone remote management. Kept below the test button so it never takes the initial D-pad focus -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@color/card_bg"
+            android:clipToPadding="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Phone Remote"
+                    android:textColor="@color/text_main"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvPairedPhones"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="No phones paired"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnUnpairPhones"
+                style="@style/Widget.AlterSub.TvButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Unpair All" />
+
+            <Button
+                android:id="@+id/btnWebRemoteToggle"
+                style="@style/Widget.AlterSub.TvButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="Turn Off" />
         </LinearLayout>
 
     </LinearLayout>

@@ -42,9 +42,24 @@ object WebRemoteHtml {
         .style-value { flex: 1; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
         .color-btn.active { border-color: #FFE500; color: #FFE500; }
         .warning { display: none; background: #4A1C1C; color: #FFB4A9; border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-size: 13px; }
+        .pin-input { letter-spacing: 6px; font-size: 20px !important; text-align: center; }
+        [hidden] { display: none !important; }
     </style>
 </head>
 <body>
+    <div class="card" id="pairCard" hidden>
+        <h1>🎬 AlterSub Remote</h1>
+        <div class="subtitle" style="font-size:14px; color:#CCC; margin-top:12px;">
+            Enter the 6-digit PIN shown on the TV. If you don't see one, open AlterSub on the TV.
+        </div>
+        <form class="input-row" onsubmit="pair(); return false;">
+            <input type="text" id="pinInput" class="pin-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="PIN">
+            <button class="btn-accent" type="submit">Pair</button>
+        </form>
+        <div class="warning" id="pairError"></div>
+    </div>
+
+    <div id="remote" hidden>
     <div class="card">
         <div style="display:flex; align-items:center;">
             <h1>🎬 AlterSub Remote</h1>
@@ -116,14 +131,75 @@ object WebRemoteHtml {
             <div style="font-size:13px; color:#666; text-align:center; padding:16px;">No tracks loaded</div>
         </div>
     </div>
+    </div>
 
     <script>
         let offsetValue = 0;
         let isPlaying = false;
 
-        async function fetchStatus() {
+        // Pairing token from the TV's PIN. Storage can be unavailable (private browsing), so it also lives in memory.
+        const TOKEN_KEY = 'altersubToken';
+        let token = '';
+        try { token = localStorage.getItem(TOKEN_KEY) || ''; } catch (e) {}
+
+        function saveToken(value) {
+            token = value;
             try {
-                const res = await fetch('/api/status');
+                if (value) localStorage.setItem(TOKEN_KEY, value); else localStorage.removeItem(TOKEN_KEY);
+            } catch (e) {}
+        }
+
+        function showPairing(message) {
+            document.getElementById('remote').hidden = true;
+            document.getElementById('pairCard').hidden = false;
+            const error = document.getElementById('pairError');
+            error.textContent = message || '';
+            error.style.display = message ? 'block' : 'none';
+        }
+
+        function showRemote() {
+            document.getElementById('pairCard').hidden = true;
+            document.getElementById('remote').hidden = false;
+        }
+
+        // Every API call carries the token; a 401 means this phone isn't paired (or was unpaired on the TV)
+        async function api(path, options) {
+            if (!token) return null; // The pairing card is already showing
+            const request = Object.assign({ method: 'POST' }, options);
+            request.headers = { 'X-AlterSub-Token': token };
+            const res = await fetch(path, request);
+            if (res.status === 401) {
+                saveToken('');
+                showPairing();
+                return null;
+            }
+            return res;
+        }
+
+        async function pair() {
+            const input = document.getElementById('pinInput');
+            try {
+                const res = await fetch('/api/pair?pin=' + encodeURIComponent(input.value.trim()), { method: 'POST' });
+                const data = await res.json();
+                if (res.ok && data.token) {
+                    saveToken(data.token);
+                    input.value = '';
+                    showRemote();
+                    fetchStatus();
+                } else {
+                    showPairing(data.error || 'Pairing failed');
+                }
+            } catch (e) {
+                showPairing("Can't reach the TV. Check that the phone is on the same Wi-Fi.");
+            }
+        }
+
+        async function fetchStatus() {
+            if (!token) return; // Not paired; the 2 s poll mustn't wipe a pairing error message
+            try {
+                const res = await api('/api/status', { method: 'GET' });
+                if (!res) return;
+                showRemote();
                 const data = await res.json();
                 
                 document.getElementById('detectedTitle').innerText = data.title || "No Content Detected";
@@ -163,7 +239,7 @@ object WebRemoteHtml {
         }
 
         async function adjustOffset(delta) {
-            await fetch('/api/offset?delta=' + delta, { method: 'POST' });
+            await api('/api/offset?delta=' + delta);
             fetchStatus();
         }
 
@@ -195,13 +271,13 @@ object WebRemoteHtml {
                 alert('Enter the time shown in the player, e.g. 41:23 or 1:05:10');
                 return;
             }
-            await fetch('/api/seek?positionMs=' + ms, { method: 'POST' });
+            await api('/api/seek?positionMs=' + ms);
             input.value = '';
             fetchStatus();
         }
 
         async function setStyle(params) {
-            await fetch('/api/style?' + params, { method: 'POST' });
+            await api('/api/style?' + params);
             fetchStatus();
         }
 
@@ -228,12 +304,12 @@ object WebRemoteHtml {
         }
 
         async function togglePlay() {
-            await fetch('/api/toggle-play', { method: 'POST' });
+            await api('/api/toggle-play');
             fetchStatus();
         }
 
         async function selectTrack(id) {
-            await fetch('/api/select-track?id=' + encodeURIComponent(id), { method: 'POST' });
+            await api('/api/select-track?id=' + encodeURIComponent(id));
             fetchStatus();
         }
 
@@ -241,7 +317,7 @@ object WebRemoteHtml {
             const query = document.getElementById('searchInput').value;
             if (!query) return;
             document.getElementById('trackList').innerHTML = '<div style="font-size:13px; color:#AAA; text-align:center; padding:16px;">Searching...</div>';
-            await fetch('/api/search?q=' + encodeURIComponent(query), { method: 'POST' });
+            await api('/api/search?q=' + encodeURIComponent(query));
             setTimeout(fetchStatus, 1500);
         }
 
@@ -252,12 +328,12 @@ object WebRemoteHtml {
             formData.append('subtitle', file);
 
             document.getElementById('activeTrackName').innerText = "Uploading " + file.name + "...";
-            await fetch('/api/upload', { method: 'POST', body: formData });
+            await api('/api/upload', { body: formData });
             setTimeout(fetchStatus, 500);
         }
 
         setInterval(fetchStatus, 2000);
-        fetchStatus();
+        if (token) fetchStatus(); else showPairing();
     </script>
 </body>
 </html>

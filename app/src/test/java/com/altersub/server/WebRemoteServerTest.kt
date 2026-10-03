@@ -15,6 +15,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -22,6 +24,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.net.ServerSocket
 
 class WebRemoteServerTest {
 
@@ -62,31 +65,49 @@ class WebRemoteServerTest {
 
     private val http = OkHttpClient()
     private val controller = FakeController()
+    private val auth = RemoteAuth()
+    private lateinit var token: String
     private lateinit var uploadDir: File
     private lateinit var server: WebRemoteServer
 
     @Before
     fun setUp() {
         uploadDir = File(tempDir.root, "uploads")
-        server = WebRemoteServer(controller, uploadDir, port = 0) // Port 0: any free port
+        server = WebRemoteServer(controller, auth, uploadDir, port = 0) // Port 0: any free port
         server.start()
+        token = pairedToken()
     }
 
     @After
     fun tearDown() = server.stop()
 
+    private fun pin() = (auth.pairing.value as RemoteAuth.Pairing.Open).pin
+
+    private fun wrongPin(pin: String) = if (pin == "000000") "111111" else "000000"
+
+    private fun pairedToken(): String {
+        auth.openPairing()
+        return (auth.pair(pin()) as RemoteAuth.PairResult.Paired).token
+    }
+
     private fun url(path: String) = "http://localhost:${server.listeningPort}$path"
 
-    private fun get(path: String) = http.newCall(Request.Builder().url(url(path)).build()).execute()
+    // Requests carry this test's paired token unless told otherwise (null: no token header at all)
+    private fun request(path: String, token: String?) = Request.Builder().url(url(path)).apply {
+        if (token != null) header("X-AlterSub-Token", token)
+    }
 
-    private fun post(path: String) =
-        http.newCall(Request.Builder().url(url(path)).post(ByteArray(0).toRequestBody()).build()).execute()
+    private fun get(path: String, token: String? = this.token) =
+        http.newCall(request(path, token).build()).execute()
+
+    private fun post(path: String, token: String? = this.token) =
+        http.newCall(request(path, token).post(ByteArray(0).toRequestBody()).build()).execute()
 
     private fun okhttp3.Response.json() = use { JSONObject(it.body!!.string()) }
 
     @Test
-    fun testServesTheRemotePage() {
-        get("/").use { response ->
+    fun testServesTheRemotePageWithoutPairing() {
+        get("/", token = null).use { response ->
             assertEquals(200, response.code)
             assertTrue(response.header("Content-Type")!!.startsWith("text/html"))
             assertTrue(response.body!!.string().contains("AlterSub Remote"))
@@ -153,17 +174,20 @@ class WebRemoteServerTest {
         assertEquals(DetectionSource.MANUAL, source)
     }
 
+    private fun upload(srt: String, token: String?) = http.newCall(
+        request("/api/upload", token).post(
+            MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("subtitle", "movie.srt", srt.toRequestBody("application/x-subrip".toMediaType()))
+                .build()
+        ).build()
+    ).execute()
+
     @Test
     fun testUploadSavesTheFileAndActivatesIt() {
         val srt = "1\n00:00:01,000 --> 00:00:02,000\nUploaded line\n"
-        val body = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart("subtitle", "movie.srt", srt.toRequestBody("application/x-subrip".toMediaType()))
-            .build()
 
-        http.newCall(Request.Builder().url(url("/api/upload")).post(body).build()).execute().use {
-            assertEquals(200, it.code)
-        }
+        upload(srt, token).use { assertEquals(200, it.code) }
 
         val saved = controller.uploads.single()
         assertEquals(uploadDir, saved.parentFile)
@@ -182,5 +206,76 @@ class WebRemoteServerTest {
         get("/api/offset?delta=100").use { assertEquals(404, it.code) } // Mutations require POST
         assertNull(controller.detections.firstOrNull())
         assertEquals(0L, controller.clock.userOffsetMs.value)
+    }
+
+    @Test
+    fun testApiCallsWithoutAPairedTokenAreRejected() {
+        get("/api/status", token = null).use { assertEquals(401, it.code) }
+        post("/api/offset?delta=500", token = "not-a-token").use { assertEquals(401, it.code) }
+        post("/api/search?q=Interstellar", token = "").use { assertEquals(401, it.code) }
+        post("/api/toggle-play", token = null).use { assertEquals(401, it.code) }
+
+        assertEquals(0L, controller.clock.userOffsetMs.value)
+        assertTrue(controller.detections.isEmpty())
+        assertFalse(controller.clock.isPlaying.value)
+    }
+
+    @Test
+    fun testUnpairedUploadIsRejectedBeforeAnythingIsSaved() {
+        upload("1\n00:00:01,000 --> 00:00:02,000\nSneaky\n", token = null).use { assertEquals(401, it.code) }
+
+        assertTrue(controller.uploads.isEmpty())
+        assertFalse(uploadDir.exists())
+        // The unread body must not be parsed as the next request on the same connection
+        get("/api/status").use { assertEquals(200, it.code) }
+    }
+
+    @Test
+    fun testUnpairingOnTheTvRevokesAccess() {
+        auth.unpairAll()
+        get("/api/status").use { assertEquals(401, it.code) }
+    }
+
+    @Test
+    fun testPairingWithThePinShownOnTheTv() {
+        auth.closePairing()
+        post("/api/pair?pin=123456", token = null).use { assertEquals(403, it.code) }
+
+        auth.openPairing()
+        post("/api/pair?pin=${wrongPin(pin())}", token = null).use { assertEquals(403, it.code) }
+
+        val newToken = post("/api/pair?pin=${pin()}", token = null).json().getString("token")
+        get("/api/status", token = newToken).use { assertEquals(200, it.code) }
+    }
+
+    @Test
+    fun testTooManyWrongPinsLockPairing() {
+        auth.openPairing()
+        val pin = pin()
+
+        repeat(RemoteAuth.MAX_FAILED_ATTEMPTS - 1) {
+            post("/api/pair?pin=${wrongPin(pin)}", token = null).use { assertEquals(403, it.code) }
+        }
+        post("/api/pair?pin=${wrongPin(pin)}", token = null).use { assertEquals(429, it.code) }
+        post("/api/pair?pin=$pin", token = null).use { assertEquals(429, it.code) }
+    }
+
+    @Test
+    fun testFallsBackToTheNextPortWhenOneIsTaken() {
+        ServerSocket(0).use { taken ->
+            val fallback = WebRemoteServer.startOnFirstFreePort(listOf(taken.localPort, 0)) { port ->
+                WebRemoteServer(controller, auth, uploadDir, port)
+            }!!
+            try {
+                assertNotEquals(taken.localPort, fallback.listeningPort)
+            } finally {
+                fallback.stop()
+            }
+
+            val none = WebRemoteServer.startOnFirstFreePort(listOf(taken.localPort)) { port ->
+                WebRemoteServer(controller, auth, uploadDir, port)
+            }
+            assertNull(none)
+        }
     }
 }

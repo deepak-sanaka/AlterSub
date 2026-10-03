@@ -67,7 +67,8 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
   * [`OpenSubtitlesApiProvider.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/provider/OpenSubtitlesApiProvider.kt) — official OpenSubtitles.com REST API.
   * [`CompositeSubtitleProvider.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/provider/CompositeSubtitleProvider.kt) — multi-source parallel aggregator & local upload repository.
 * **`server/`**:
-  * [`WebRemoteServer.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/WebRemoteServer.kt) — NanoHTTPD embedded server on port 8080. Talks only to the [`RemoteController`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/RemoteController.kt) interface (implemented by `AlterSubApp`), so routes are tested in `WebRemoteServerTest`.
+  * [`WebRemoteServer.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/WebRemoteServer.kt) — NanoHTTPD embedded server on port 8080 (falls back to 8081–8089). Talks only to the [`RemoteController`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/RemoteController.kt) interface (implemented by `AlterSubApp`), so routes are tested in `WebRemoteServerTest`.
+  * [`RemoteAuth.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/RemoteAuth.kt) — PIN pairing. Every `/api/*` route except `/api/pair` requires a paired phone's token (`X-AlterSub-Token`); keep new routes behind that check.
   * [`WebRemoteHtml.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/WebRemoteHtml.kt) — dark-mode mobile remote UI.
 * **`service/`**:
   * [`SubtitleOverlayService.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/service/SubtitleOverlayService.kt) — `TYPE_APPLICATION_OVERLAY` foreground service.
@@ -106,6 +107,7 @@ adb shell settings put secure accessibility_enabled 1
 # Grant notification / media session listener
 adb shell cmd notification allow_listener com.altersub/com.altersub.service.MediaNotificationListener
 
-# Forward embedded web remote port to host PC
+# Forward embedded web remote port to host PC (use the port the TV screen shows if 8080 was taken),
+# then open http://localhost:8888 and enter the PIN shown on the AlterSub TV screen
 adb forward tcp:8888 tcp:8080
 ```

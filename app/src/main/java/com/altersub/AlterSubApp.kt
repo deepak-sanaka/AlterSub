@@ -12,6 +12,7 @@ import com.altersub.core.parser.SubtitleIndex
 import com.altersub.core.session.SubtitleSession
 import com.altersub.detection.DetectionSource
 import com.altersub.provider.CompositeSubtitleProvider
+import com.altersub.server.RemoteAuth
 import com.altersub.server.RemoteController
 import com.altersub.server.WebRemoteServer
 import com.altersub.service.SubtitleOverlayService
@@ -43,7 +44,53 @@ class AlterSubApp : Application(), RemoteController {
     val subtitleIndex: StateFlow<SubtitleIndex?> get() = session.subtitleIndex
     val acceptsScreenDetection: Boolean get() = session.acceptsScreenDetection
 
+    /** Phone remote pairing. Paired phones' tokens are persisted, so phones stay paired across restarts. */
+    val remoteAuth by lazy {
+        val prefs = getSharedPreferences(REMOTE_PREFS, MODE_PRIVATE)
+        RemoteAuth(
+            savedTokens = prefs.getString(KEY_TOKENS, null)?.split(',')?.filter { it.isNotEmpty() }.orEmpty(),
+            onTokensChanged = { tokens -> prefs.edit().putString(KEY_TOKENS, tokens.joinToString(",")).apply() }
+        )
+    }
+
+    sealed interface WebRemoteState {
+        object Off : WebRemoteState
+        data class Running(val port: Int) : WebRemoteState
+        /** None of [WebRemoteServer.PORTS] could be bound. */
+        object Failed : WebRemoteState
+    }
+
     private var webRemoteServer: WebRemoteServer? = null
+    private val _webRemoteState = MutableStateFlow<WebRemoteState>(WebRemoteState.Off)
+    val webRemoteState: StateFlow<WebRemoteState> = _webRemoteState.asStateFlow()
+
+    /** Switches the phone remote on or off (from the TV screen) and remembers the choice. */
+    fun setWebRemoteEnabled(enabled: Boolean) {
+        getSharedPreferences(REMOTE_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_REMOTE_ENABLED, enabled).apply()
+        if (enabled) startWebRemote() else stopWebRemote()
+    }
+
+    private fun startWebRemote() {
+        if (webRemoteServer != null) return
+
+        val server = WebRemoteServer.startOnFirstFreePort(WebRemoteServer.PORTS) { port ->
+            WebRemoteServer(this, remoteAuth, File(cacheDir, "uploads"), port)
+        }
+        webRemoteServer = server
+        if (server != null) {
+            _webRemoteState.value = WebRemoteState.Running(server.listeningPort)
+            Log.i("AlterSubApp", "Companion Web Remote started on port ${server.listeningPort}")
+        } else {
+            _webRemoteState.value = WebRemoteState.Failed
+            Log.e("AlterSubApp", "Companion Web Remote could not bind any of ${WebRemoteServer.PORTS}")
+        }
+    }
+
+    private fun stopWebRemote() {
+        webRemoteServer?.stop()
+        webRemoteServer = null
+        _webRemoteState.value = WebRemoteState.Off
+    }
 
     private val _overlayRunning = MutableStateFlow(false)
     override val overlayRunning: StateFlow<Boolean> = _overlayRunning.asStateFlow()
@@ -91,13 +138,9 @@ class AlterSubApp : Application(), RemoteController {
             verticalPosition = stylePrefs.getFloat(KEY_POSITION, SubtitleStyle.DEFAULT_VERTICAL_POSITION)
         )
 
-        // Start embedded web server for mobile companion remote
-        try {
-            webRemoteServer = WebRemoteServer(this, File(cacheDir, "uploads"), 8080)
-            webRemoteServer?.start()
-            Log.i("AlterSubApp", "Companion Web Remote started on port 8080")
-        } catch (e: Exception) {
-            Log.e("AlterSubApp", "Failed to start Companion Web Remote: ${e.message}")
+        // Embedded web server for the phone companion remote, unless it was switched off on the TV
+        if (getSharedPreferences(REMOTE_PREFS, MODE_PRIVATE).getBoolean(KEY_REMOTE_ENABLED, true)) {
+            startWebRemote()
         }
     }
 
@@ -118,6 +161,9 @@ class AlterSubApp : Application(), RemoteController {
         private const val KEY_TEXT_SIZE = "textSizeSp"
         private const val KEY_COLOR = "color"
         private const val KEY_POSITION = "verticalPosition"
+        private const val REMOTE_PREFS = "web_remote"
+        private const val KEY_TOKENS = "pairedTokens"
+        private const val KEY_REMOTE_ENABLED = "enabled"
 
         lateinit var instance: AlterSubApp
             private set
