@@ -5,12 +5,14 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.net.Uri
 import android.net.wifi.WifiManager
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.format.Formatter
+import android.widget.Button
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -38,6 +40,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var ipAddress = ""
+    private var remoteQrLink: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -91,19 +94,35 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderWebRemote(state: WebRemoteState, pairing: RemoteAuth.Pairing, paired: Int) {
-        val ports = WebRemoteServer.PORTS
-        binding.tvIpAddress.text = when (state) {
-            is WebRemoteState.Running -> "Open on your phone: http://$ipAddress:${state.port}"
-            WebRemoteState.Off -> "Phone remote is turned off"
-            WebRemoteState.Failed -> "Phone remote couldn't start: ports ${ports.first()}–${ports.last()} are all in use"
-        }
+        val pin = (pairing as? RemoteAuth.Pairing.Open)?.pin
 
-        binding.tvRemotePin.isVisible = state is WebRemoteState.Running
-        binding.tvRemotePin.text = when (pairing) {
-            // Grouped as "482 913" so it's easy to read from the couch
-            is RemoteAuth.Pairing.Open -> "Pairing PIN: ${pairing.pin.chunked(3).joinToString(" ")}"
-            RemoteAuth.Pairing.Locked -> "Too many wrong PINs. Press Back and reopen AlterSub for a new PIN."
-            RemoteAuth.Pairing.Closed -> ""
+        // The QR carries the PIN, so scanning it opens the remote already paired
+        showRemoteQr((state as? WebRemoteState.Running)?.let { QrCode.remoteLink(ipAddress, it.port, pin) })
+
+        binding.tvIpAddress.isVisible = state is WebRemoteState.Running
+        when (state) {
+            is WebRemoteState.Running -> {
+                binding.tvIpAddress.text = "or open http://$ipAddress:${state.port}"
+                if (pairing == RemoteAuth.Pairing.Locked) {
+                    binding.tvRemoteHint.text = "Too many wrong PINs"
+                    binding.tvRemotePin.text = "Press Back and reopen AlterSub for a new PIN."
+                } else {
+                    binding.tvRemoteHint.text = "Scan with your phone's camera"
+                    // Grouped as "482 913" so it's easy to read from the couch
+                    binding.tvRemotePin.text = pin?.let { "and enter PIN ${it.chunked(3).joinToString(" ")}" } ?: ""
+                }
+            }
+
+            WebRemoteState.Off -> {
+                binding.tvRemoteHint.text = "Phone remote is off"
+                binding.tvRemotePin.text = "Turn it on to pick subtitles and fix timing from your phone."
+            }
+
+            WebRemoteState.Failed -> {
+                val ports = WebRemoteServer.PORTS
+                binding.tvRemoteHint.text = "Phone remote couldn't start"
+                binding.tvRemotePin.text = "Ports ${ports.first()}–${ports.last()} are all in use. Press Retry to try again."
+            }
         }
 
         binding.tvPairedPhones.text = when (paired) {
@@ -116,17 +135,25 @@ class MainActivity : AppCompatActivity() {
         binding.btnUnpairPhones.isEnabled = paired > 0
 
         binding.btnWebRemoteToggle.text = when (state) {
-            is WebRemoteState.Running -> "Turn Off"
-            WebRemoteState.Off -> "Turn On"
+            is WebRemoteState.Running -> "Turn off"
+            WebRemoteState.Off -> "Turn on"
             WebRemoteState.Failed -> "Retry"
         }
+    }
+
+    /** Encodes a new QR only when the link (address, port or PIN) actually changes. */
+    private fun showRemoteQr(link: String?) {
+        binding.ivRemoteQr.isVisible = link != null
+        if (link == null || link == remoteQrLink) return
+        remoteQrLink = link
+        binding.ivRemoteQr.setImageDrawable(QrCode.drawable(resources, link))
     }
 
     private fun setupPermissions() {
         binding.btnOverlayPermission.setOnClickListener {
             openPermissionScreen(
                 Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")),
-                "Display Over Other Apps",
+                "Show subtitles over other apps",
                 "appops set $packageName SYSTEM_ALERT_WINDOW allow"
             )
         }
@@ -134,7 +161,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnAccessibilityPermission.setOnClickListener {
             openPermissionScreen(
                 Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
-                "Accessibility Title Inspector",
+                "Recognise what's playing",
                 "settings put secure enabled_accessibility_services " +
                     "$packageName/${AccessibilityInspectorService::class.java.name}\n" +
                     "adb shell settings put secure accessibility_enabled 1"
@@ -144,7 +171,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnNotificationPermission.setOnClickListener {
             openPermissionScreen(
                 Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS),
-                "MediaSession Play/Pause Sync",
+                "Follow play and pause",
                 "cmd notification allow_listener $packageName/${MediaNotificationListener::class.java.name}"
             )
         }
@@ -178,32 +205,44 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updatePermissionStatuses() {
-        val canOverlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Settings.canDrawOverlays(this)
-        } else true
-
-        binding.tvOverlayStatus.text = if (canOverlay) {
-            "1. Display Over Other Apps: ✅ GRANTED"
-        } else {
-            "1. Display Over Other Apps: ❌ REQUIRED"
-        }
-        binding.btnOverlayPermission.isEnabled = !canOverlay
-
+        val canOverlay = Settings.canDrawOverlays(this)
         val inspectorEnabled = isAccessibilityInspectorEnabled()
-        binding.tvAccessibilityStatus.text = if (inspectorEnabled) {
-            "2. Accessibility Title Inspector: ✅ ENABLED"
-        } else {
-            "2. Accessibility Title Inspector: ❌ NOT ENABLED"
-        }
-        binding.btnAccessibilityPermission.isEnabled = !inspectorEnabled
-
         val listenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
-        binding.tvNotificationStatus.text = if (listenerEnabled) {
-            "3. MediaSession Play/Pause Sync: ✅ ENABLED"
-        } else {
-            "3. MediaSession Play/Pause Sync: ❌ NOT ENABLED"
+
+        showStep(binding.ivOverlayStatus, binding.btnOverlayPermission, canOverlay)
+        showStep(binding.ivAccessibilityStatus, binding.btnAccessibilityPermission, inspectorEnabled)
+        showStep(binding.ivNotificationStatus, binding.btnNotificationPermission, listenerEnabled)
+
+        val remaining = listOf(canOverlay, inspectorEnabled, listenerEnabled).count { !it }
+        binding.tvReadyChip.text = when (remaining) {
+            0 -> "Ready"
+            1 -> "1 step left"
+            else -> "$remaining steps left"
         }
-        binding.btnNotificationPermission.isEnabled = !listenerEnabled
+        binding.tvReadyChip.backgroundTintList =
+            ColorStateList.valueOf(getColor(if (remaining == 0) R.color.status_green else R.color.status_amber))
+
+        binding.tvNextStep.text = when {
+            !canOverlay -> "Start with the first step: without it, AlterSub can't show subtitles."
+            remaining > 0 -> "Almost there. Finish the remaining steps so AlterSub works on its own."
+            else -> "You're all set. Start a show in your streaming app and subtitles appear on their own. " +
+                "Use your phone to switch tracks or fix the timing."
+        }
+
+        // Finished steps hide their buttons, so make sure D-pad focus lands on something visible:
+        // the next step to do, or the test button once everything is set up
+        val focused = currentFocus
+        if (focused == null || !focused.isShown) {
+            listOf(binding.btnOverlayPermission, binding.btnAccessibilityPermission, binding.btnNotificationPermission)
+                .firstOrNull { it.isVisible }
+                ?.requestFocus()
+                ?: binding.btnTestSubtitle.requestFocus()
+        }
+    }
+
+    private fun showStep(icon: ImageView, button: Button, done: Boolean) {
+        icon.setImageResource(if (done) R.drawable.ic_status_done else R.drawable.ic_status_todo)
+        button.isVisible = !done
     }
 
     private fun isAccessibilityInspectorEnabled(): Boolean {

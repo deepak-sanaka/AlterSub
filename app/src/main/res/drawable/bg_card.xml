@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Flat rounded card: a plain fill. No elevation shadows or border strokes; each is an extra GPU pass per frame on low-end TVs -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/card_bg" />
+    <corners android:radius="16dp" />
+</shape>

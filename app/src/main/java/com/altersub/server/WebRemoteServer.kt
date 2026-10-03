@@ -11,6 +11,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.Locale
 
 class WebRemoteServer(
     private val controller: RemoteController,
@@ -183,6 +184,10 @@ class WebRemoteServer(
             .put("color", style.color)
             .put("verticalPosition", style.verticalPosition.toDouble())
             .put("colors", JSONArray(SubtitleStyle.COLORS.keys.toList()))
+            // Hex values so the remote can show real colour swatches
+            .put("palette", JSONObject().apply {
+                SubtitleStyle.COLORS.forEach { (name, argb) -> put(name, String.format(Locale.ROOT, "#%06X", argb and 0xFFFFFF)) }
+            })
     }
 
     private fun handleUpload(session: IHTTPSession): Response {

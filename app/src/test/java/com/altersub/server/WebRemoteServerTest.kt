@@ -131,6 +131,7 @@ class WebRemoteServerTest {
         assertEquals(2_483_000L, status.getLong("positionMs"))
         assertEquals("Overlay blocked", status.getString("overlayError"))
         assertEquals("yellow", status.getJSONObject("style").getString("color"))
+        assertEquals("#FFE500", status.getJSONObject("style").getJSONObject("palette").getString("yellow"))
     }
 
     @Test

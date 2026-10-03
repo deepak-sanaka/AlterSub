@@ -39,8 +39,9 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
 * **Architecture**: Clean Architecture with modular separation (`core/`, `detection/`, `provider/`, `server/`, `service/`, `ui/`).
 * **HTTP Client**: OkHttp 4 (`okhttp:4.12.0`).
 * **Embedded Web Server**: NanoHTTPD 2.3 (`org.nanohttpd:nanohttpd:2.3.1`) — ultra-lightweight (~50KB jar, <2MB RAM).
+* **QR codes**: ZXing core (`com.google.zxing:core:3.5.3`), encoder only; pure Java, no camera or UI code.
 * **UI**:
-  * TV Dashboard: AppCompat with plain Views (D-pad navigable); listed in the TV launcher via `LEANBACK_LAUNCHER`. No Leanback library.
+  * TV Dashboard: AppCompat with plain Views (D-pad navigable); listed in the TV launcher via `LEANBACK_LAUNCHER`. No Leanback library. Keep it cheap to draw: flat shape drawables (no elevation shadows, border strokes or blur), no idle animations, and no view background that repaints the full screen over the window background.
   * Overlay: Pure Android `Canvas` / `TextPaint` custom View.
 
 ---
@@ -105,5 +106,6 @@ adb shell cmd notification allow_listener com.altersub/com.altersub.service.Medi
 
 # Forward embedded web remote port to host PC (use the port the TV screen shows if 8080 was taken),
 # then open http://localhost:8888 and enter the PIN shown on the AlterSub TV screen
+# (or open http://localhost:8888/#pin=<PIN>, which is what the TV's QR code does)
 adb forward tcp:8888 tcp:8080
 ```

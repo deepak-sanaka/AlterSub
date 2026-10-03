@@ -62,10 +62,11 @@ AlterSub/
 │   │   │   │       ├── overlay/
 │   │   │   │       │   └── SubtitleTextView.kt      # Hardware-accelerated canvas with stroked text & auto-fit
 │   │   │   │       └── settings/
-│   │   │   │           └── MainActivity.kt          # AppCompat TV setup screen, permission shortcuts, test trigger
+│   │   │   │           ├── MainActivity.kt          # TV setup screen: setup checklist, phone-remote QR/PIN, test trigger
+│   │   │   │           └── QrCode.kt                # ZXing QR → 1-px-per-module bitmap, scaled up unfiltered
 │   │   │   └── res/
-│   │   │       ├── drawable/                        # ic_launcher, ic_launcher_banner for Android TV
-│   │   │       ├── layout/activity_main.xml         # TV setup layout (plain AppCompat Views)
+│   │   │       ├── drawable/                        # Launcher icons, flat card/button/chip shapes, status icons
+│   │   │       ├── layout/activity_main.xml         # Two-column TV setup layout (plain AppCompat Views)
 │   │   │       ├── values/                          # colors, strings, styles
 │   │   │       └── xml/accessibility_service_config.xml # Accessibility config with event throttling
 │   │   └── test/java/com/altersub/
@@ -76,7 +77,8 @@ AlterSub/
 │   │       ├── detection/                           # DetectionArbiterTest, TitleSanitizerTest
 │   │       ├── provider/                            # MockWebServer tests per provider, HttpAwaitTest, CompositeSubtitleProviderTest,
 │   │       │                                        #   StremioSubtitleProviderLiveTest (real network, only with -PliveTests)
-│   │       └── server/                              # WebRemoteServerTest (every route + token checks, port fallback), RemoteAuthTest
+│   │       ├── server/                              # WebRemoteServerTest (every route + token checks, port fallback), RemoteAuthTest
+│   │       └── ui/settings/QrCodeTest.kt            # The pairing link encodes and decodes back intact
 │   ├── build.gradle.kts                             # App module build configuration
 │   └── proguard-rules.pro                           # R8 / Proguard rules for NanoHTTPD and AlterSub models
 ├── docs/
@@ -175,7 +177,9 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
   * The TV setup screen shows a 6-digit PIN, valid only while that screen is open. A phone that enters it gets a random 128-bit token, kept in the page's `localStorage` and sent as `X-AlterSub-Token` on every `/api/*` call.
   * Without a valid token, every `/api/*` route except `/api/pair` returns 401 before reading the request (so unpaired uploads are never written). The page at `/` holds no data and stays public.
   * Five wrong PINs lock pairing until the TV screen is reopened, which issues a new PIN.
-  * Up to 8 phones stay paired across restarts (tokens in `SharedPreferences`). The TV's "Phone Remote" card shows how many, and has **Unpair All** and **Turn Off / Turn On** (persisted).
+  * **QR code**: the TV shows a QR code for `http://<tv-ip>:<port>/#pin=<PIN>`. Scanning it opens the remote already paired. The PIN rides in the URL fragment, which browsers never send to the server, and the page removes it from the address bar once read. It changes whenever the PIN does.
+  * Up to 8 phones stay paired across restarts (tokens in `SharedPreferences`). The TV's "Phone remote" card shows how many, and has **Unpair all** and **Turn off / Turn on** (persisted).
+* **Phone page**: single self-contained page (system fonts, no external assets). Cards for Now playing, Timing (offset, clock, "Match the player's time"), Subtitles (search, track list, upload) and Appearance (size, position, colour swatches from the server's `palette`). A header pill shows whether the TV is reachable.
 * **Endpoints**:
   * `GET /`: Serves complete, zero-dependency dark-mode HTML/CSS/JS remote.
   * `POST /api/pair?pin=<pin>`: Exchanges the TV's PIN for a token (403 wrong PIN or screen closed, 429 locked).
@@ -208,7 +212,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
 
 ### 5.1 Automated Unit Tests
 * **Test Runner**: Gradle JUnit 4 on the JVM, with the real `org.json` artifact on the test classpath (Android's stub would throw).
-* **Status (2026-10-03)**: 80 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
+* **Status (2026-10-03)**: 83 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
 * **Test Suites**:
   * [`DetectionArbiterTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/DetectionArbiterTest.kt): MediaSession outranks scraping; a manual choice holds until the session title changes; scraping resumes after sessions end. (Passes)
   * [`SubtitleClockTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/clock/SubtitleClockTest.kt): MediaSession position extrapolation (elapsed time × speed, paused, missing/future snapshot, zero speed). (Passes)
@@ -256,6 +260,11 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
     * Rendering tracks whose title, source and language held `<img onerror>`, `<b onmouseover>` and `<svg onload>` payloads ran nothing and created no elements; the payloads showed as literal text, as did `Tom & Jerry's <Movie>`.
     * Clicking a track whose id was `x')+alert(1)+('` sent exactly that id to `/api/select-track`.
     * A real "Inception" search still listed 5 tracks, and clicking one switched the active track.
+  * **UI refresh (two-column TV screen, QR pairing, new phone page)**:
+    * The TV screen fits 960×540dp without scrolling. Initial D-pad focus lands on the first unfinished step's button (or the test button once all are done), and finished steps hide their buttons. With all three granted, the chip reads "Ready".
+    * The QR code in a 1080p screenshot decoded (ZXing) to `http://192.168.232.2:8080/#pin=371785`, matching the PIN on screen. Opening that link in a browser with no stored token paired it and removed the PIN from the address bar.
+    * Phone page at 375px: no horizontal scroll; search, track switching, timing and colour swatches all work; a wrong PIN shows the error on the pairing card.
+    * **Cost on the emulator** (software GL, so absolute numbers are pessimistic; same key presses, old vs new screen): UI-thread time per frame ~1–2 ms for both, GPU command time 13.6–14.6 ms (old) vs 16–17.5 ms (new), total frame time 37–41 ms vs 37–42 ms. No frames are drawn while idle. PSS 42.7 MB (old) vs 42.1 MB (new). Card borders and a second full-screen background fill were removed to get there.
 
 ### 5.3 Not Yet Verified
 * Any physical Android TV device. API 28 has only been exercised on the emulator above.
@@ -456,9 +465,9 @@ None open.
 ## 8. Current Project State & Next Steps
 
 * **Current Status**: Prototype / alpha.
-  * **Works today**: builds and 80 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: PIN pairing, manual search with automatic Stremio download, upload, track selection, per-track offset, "Set time" and subtitle style.
+  * **Works today**: builds and 83 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: QR or PIN pairing, manual search with automatic Stremio download, upload, track selection, per-track offset, "Set time" and subtitle style.
   * **Open issues**: High and Medium only (§7.1). Most importantly, automatic detection and sync against real streaming apps on a physical TV is unproven (KI-1), and on the emulator accessibility auto-detection fired on the TV launcher's UI text (KI-3).
-* **Artifact Location**: `app/build/outputs/apk/debug/app-debug.apk` (~10.9 MB).
+* **Artifact Location**: `app/build/outputs/apk/debug/app-debug.apk` (~9.5 MB from a clean build; incremental debug builds leave dead space and can be much larger).
 * **Recommended Next Steps** (in order):
   1. **Device validation (KI-1)**: real Android TV + Netflix/Prime/Disney+; record MediaSession and accessibility output per app.
   2. **Sourcing resilience (KI-2)**: propagate the IMDb ID so YTS works; add OpenSubtitles API-key entry.

@@ -11,6 +11,8 @@
         <item name="android:background">@drawable/bg_tv_button</item>
         <item name="android:textColor">@color/tv_button_text</item>
         <item name="android:textStyle">bold</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">16sp</item>
         <item name="android:minWidth">140dp</item>
         <item name="android:paddingLeft">24dp</item>
         <item name="android:paddingRight">24dp</item>
@@ -19,6 +21,50 @@
 
     <style name="Widget.AlterSub.TvButton.Primary">
         <item name="android:background">@drawable/bg_tv_button_primary</item>
-        <item name="android:textColor">@color/black</item>
+        <item name="android:textColor">@color/tv_button_primary_text</item>
+    </style>
+
+    <!-- Smaller secondary buttons that sit side by side in the narrow phone-remote card -->
+    <style name="Widget.AlterSub.TvButton.Compact">
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">40dp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:paddingLeft">18dp</item>
+        <item name="android:paddingRight">18dp</item>
+    </style>
+
+    <style name="TextAppearance.AlterSub.SectionLabel" parent="">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.12</item>
+        <item name="android:textAllCaps">true</item>
+    </style>
+
+    <!-- One setup step: status icon, title + explanation, and an action button that hides once done -->
+    <style name="Widget.AlterSub.SetupRow" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">10dp</item>
+        <item name="android:background">@drawable/bg_card</item>
+        <item name="android:clipToPadding">false</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:minHeight">76dp</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:paddingLeft">18dp</item>
+        <item name="android:paddingRight">16dp</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+    </style>
+
+    <style name="TextAppearance.AlterSub.RowTitle" parent="">
+        <item name="android:textColor">@color/text_main</item>
+        <item name="android:textSize">17sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.AlterSub.RowBody" parent="">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:textSize">13sp</item>
     </style>
 </resources>
