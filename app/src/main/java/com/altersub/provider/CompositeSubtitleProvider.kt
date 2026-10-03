@@ -8,9 +8,12 @@ import kotlinx.coroutines.coroutineScope
 import java.io.File
 
 class CompositeSubtitleProvider(
-    val stremioProvider: StremioSubtitleProvider = StremioSubtitleProvider(),
-    val ytsProvider: YtsSubtitleProvider = YtsSubtitleProvider(),
-    val openSubtitlesApiProvider: OpenSubtitlesApiProvider = OpenSubtitlesApiProvider()
+    // Queried in parallel; results keep this order (official API, community mirror, then YTS)
+    private val providers: List<SubtitleProvider> = listOf(
+        OpenSubtitlesApiProvider(),
+        StremioSubtitleProvider(),
+        YtsSubtitleProvider()
+    )
 ) {
     // Tracks uploaded via Phone Web Remote, keyed by the content they were uploaded for
     private val localUploadsByContent = HashMap<String, MutableList<SubtitleTrack>>()
@@ -46,14 +49,11 @@ class CompositeSubtitleProvider(
         // 1. Prepend tracks the user uploaded for this same content
         results.addAll(localTracksFor(metadata))
 
-        // 2. Query enabled online providers in parallel
-        val deferredList = listOfNotNull(
-            if (openSubtitlesApiProvider.isEnabled) async { openSubtitlesApiProvider.search(metadata, language) } else null,
-            if (stremioProvider.isEnabled) async { stremioProvider.search(metadata, language) } else null,
-            if (ytsProvider.isEnabled && !metadata.isEpisode) async { ytsProvider.search(metadata, language) } else null
-        )
-
-        val providerOutputs = deferredList.awaitAll()
+        // 2. Query enabled online providers in parallel (each skips content it can't serve, e.g. YTS episodes)
+        val providerOutputs = providers
+            .filter { it.isEnabled }
+            .map { provider -> async { provider.search(metadata, language) } }
+            .awaitAll()
         for (list in providerOutputs) {
             results.addAll(list)
         }
@@ -69,10 +69,6 @@ class CompositeSubtitleProvider(
             if (f.exists()) return f
         }
 
-        return when {
-            track.source == openSubtitlesApiProvider.name -> openSubtitlesApiProvider.download(track, targetDir)
-            track.source == ytsProvider.name -> ytsProvider.download(track, targetDir)
-            else -> stremioProvider.download(track, targetDir)
-        }
+        return providers.firstOrNull { it.name == track.source }?.download(track, targetDir)
     }
 }

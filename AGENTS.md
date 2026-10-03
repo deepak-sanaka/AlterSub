@@ -51,7 +51,8 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
 
 ## 4. Directory & Subsystem Map
 
-* **`core/model/`**: Data models (`ContentMetadata`, `SubtitleCue`, `SubtitleTrack`, `PlaybackStateInfo`).
+* **`core/model/`**: Data models (`ContentMetadata`, `SubtitleCue`, `SubtitleTrack`, `SubtitleStyle`, `PlaybackStateInfo`).
+* **`core/session/`**: [`SubtitleSession.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/core/session/SubtitleSession.kt) — detection → search → download → active-track orchestration (cancellation, stale-result and user-choice rules). `AlterSubApp` delegates to it; keep it free of Android components so `SubtitleSessionTest` can run on the JVM.
 * **`core/clock/`**: [`SubtitleClock.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/core/clock/SubtitleClock.kt) — monotonic elapsed realtime timekeeper with $\pm\text{ms}$ user offset.
 * **`core/parser/`**:
   * [`SrtParser.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/core/parser/SrtParser.kt) — single-pass UTF-8/BOM SRT parser with precompiled tag stripping (parses once per track; the per-frame zero-allocation rule applies to `SubtitleTextView.onDraw`).
@@ -66,7 +67,7 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
   * [`OpenSubtitlesApiProvider.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/provider/OpenSubtitlesApiProvider.kt) — official OpenSubtitles.com REST API.
   * [`CompositeSubtitleProvider.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/provider/CompositeSubtitleProvider.kt) — multi-source parallel aggregator & local upload repository.
 * **`server/`**:
-  * [`WebRemoteServer.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/WebRemoteServer.kt) — NanoHTTPD embedded server on port 8080.
+  * [`WebRemoteServer.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/WebRemoteServer.kt) — NanoHTTPD embedded server on port 8080. Talks only to the [`RemoteController`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/RemoteController.kt) interface (implemented by `AlterSubApp`), so routes are tested in `WebRemoteServerTest`.
   * [`WebRemoteHtml.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/WebRemoteHtml.kt) — dark-mode mobile remote UI.
 * **`service/`**:
   * [`SubtitleOverlayService.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/service/SubtitleOverlayService.kt) — `TYPE_APPLICATION_OVERLAY` foreground service.
