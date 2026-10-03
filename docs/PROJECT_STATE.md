@@ -74,7 +74,6 @@ AlterSub/
 │   └── PROJECT_STATE.md                             # This file
 ├── gradle/wrapper/                                  # Gradle 8.13 wrapper binaries & properties
 ├── AGENTS.md                                        # Rules and constraints for AI agents / contributors
-├── *.png                                            # Emulator screenshots from initial verification
 ├── build.gradle.kts                                 # Root build configuration
 ├── gradle.properties                                # JVM & AndroidX memory options
 ├── local.properties                                 # Android SDK path configuration (git-ignored)
@@ -202,7 +201,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`.
 ### 5.2 Device & Emulator Verification
 * **Device Tested**: `Medium_Phone_API_35` (Android 15 / API 35 x86_64) **only**. This is a phone emulator, not a TV.
 * **Overlay Verification**:
-  * Tested with the in-app "Test Subtitle Overlay" button, rendering over AlterSub's own settings screen. Screenshot captured at [`overlay_perfect.png`](file:///c:/Users/deepa/AlterSub/overlay_perfect.png).
+  * Tested with the in-app "Test Subtitle Overlay" button, rendering over AlterSub's own settings screen.
   * Confirmed: High-contrast yellow stroked text, centered bounding box, auto-scaling, and proper layering over system views.
 * **Web Remote Verification**:
   * Port forwarded host `tcp:8888` to emulator `tcp:8080`.
