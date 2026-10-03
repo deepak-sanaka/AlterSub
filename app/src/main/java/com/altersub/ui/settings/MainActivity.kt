@@ -1,5 +1,6 @@
 package com.altersub.ui.settings
 
+import android.app.ActivityManager
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
@@ -31,6 +32,7 @@ import com.altersub.server.RemoteAuth
 import com.altersub.server.WebRemoteServer
 import com.altersub.service.AccessibilityInspectorService
 import com.altersub.service.MediaNotificationListener
+import com.altersub.service.MediaSessionPoller
 import com.altersub.ui.AppFont
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -61,6 +63,8 @@ class MainActivity : AppCompatActivity() {
 
         // Phones can only pair while this screen (and so the PIN) is showing on the TV
         AlterSubApp.instance.remoteAuth.openPairing()
+        // Picks up a DUMP permission granted over ADB since the app started (low-RAM TVs)
+        AlterSubApp.instance.mediaSessionPoller.startIfPermitted()
 
         // Start the overlay while we're in the foreground, where Android always allows it. On a TV it then
         // stays up, so later detections never have to start a foreground service from the background.
@@ -198,11 +202,25 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnNotificationPermission.setOnClickListener {
-            openPermissionScreen(
-                Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS),
-                "Follow play and pause",
-                "cmd notification allow_listener $packageName/${MediaNotificationListener::class.java.name}"
-            )
+            if (getSystemService(ActivityManager::class.java).isLowRamDevice) {
+                // Android never grants notification access on low-RAM devices (most 1-2 GB TVs), and hides the
+                // screen for it. The same play state is readable with the DUMP permission, which ADB can grant.
+                AlertDialog.Builder(this)
+                    .setTitle("Follow play and pause")
+                    .setMessage(
+                        "This TV doesn't let apps follow other apps' playback the usual way. Grant AlterSub " +
+                            "access once from a computer connected with ADB, then reopen AlterSub:\n\n" +
+                            "adb shell pm grant $packageName android.permission.DUMP"
+                    )
+                    .setPositiveButton("OK", null)
+                    .show()
+            } else {
+                openPermissionScreen(
+                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS),
+                    "Follow play and pause",
+                    "cmd notification allow_listener $packageName/${MediaNotificationListener::class.java.name}"
+                )
+            }
         }
     }
 
@@ -236,7 +254,9 @@ class MainActivity : AppCompatActivity() {
     private fun updatePermissionStatuses() {
         val canOverlay = Settings.canDrawOverlays(this)
         val inspectorEnabled = isAccessibilityInspectorEnabled()
-        val listenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
+        // Either route works: the notification listener, or (low-RAM TVs) polling with the DUMP permission
+        val listenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName) ||
+            MediaSessionPoller.hasDumpPermission(this)
 
         showStep(binding.ivOverlayStatus, binding.btnOverlayPermission, canOverlay)
         showStep(binding.ivAccessibilityStatus, binding.btnAccessibilityPermission, inspectorEnabled)

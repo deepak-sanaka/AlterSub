@@ -79,6 +79,7 @@ class MediaNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
+        isConnected = true
         Log.i("MediaSessionListener", "NotificationListener connected")
 
         mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
@@ -129,11 +130,24 @@ class MediaNotificationListener : NotificationListenerService() {
         }
     }
 
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        isConnected = false
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        isConnected = false
         for ((controller, callback) in activeControllers) {
             controller.unregisterCallback(callback)
         }
         activeControllers.clear()
+    }
+
+    companion object {
+        /** True while Android has this listener bound; MediaSessionPoller stands aside then. */
+        @Volatile
+        var isConnected = false
+            private set
     }
 }

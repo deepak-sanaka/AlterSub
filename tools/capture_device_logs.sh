@@ -29,17 +29,28 @@ adb_() { MSYS_NO_PATHCONV=1 "$ADB" -s "$SERIAL" "$@"; }
 } > "$OUT/device-info.txt" 2>&1
 
 adb_ logcat -c
-adb_ logcat -v threadtime > "$OUT/logcat.txt" 2>&1 &
+# The stream drops whenever the TV's network changes, so it is restarted; -T 1
+# resumes from the newest line instead of replaying the whole buffer
+( while true; do
+    adb_ logcat -v threadtime -T 1 >> "$OUT/logcat.txt" 2>&1
+    echo "----- logcat stream ended $(date +%H:%M:%S), reconnecting -----" >> "$OUT/logcat.txt"
+    sleep 2
+done ) &
 LOGCAT_PID=$!
 trap 'kill $LOGCAT_PID 2>/dev/null; echo "Logs in $OUT"; exit 0' INT TERM
 
 echo "Capturing to $OUT (Ctrl+C to stop)"
+tick=0
 while true; do
     {
         echo "===== $(date +%H:%M:%S) ====="
         adb_ shell dumpsys window | tr -d '\r' | grep -m1 mCurrentFocus
         adb_ shell dumpsys media_session | tr -d '\r' | grep -E "package=|state=PlaybackState|metadata:|description=" | head -20
-        adb_ shell dumpsys meminfo com.altersub | tr -d '\r' | grep -E "TOTAL:|Java Heap:|Native Heap:" | tr -s ' '
+        # dumpsys meminfo forces a GC inside AlterSub, so sample memory only once a minute
+        if [ $((tick % 4)) -eq 0 ]; then
+            adb_ shell dumpsys meminfo com.altersub | tr -d '\r' | grep -E "TOTAL:|Java Heap:|Native Heap:" | tr -s ' '
+        fi
     } >> "$OUT/snapshots.txt" 2>&1
+    tick=$((tick + 1))
     sleep 15
 done

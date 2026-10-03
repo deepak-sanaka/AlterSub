@@ -16,6 +16,11 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Only for low-RAM TVs, where notification-listener access is impossible: lets MediaSessionPoller read
+         `dumpsys media_session`. Not grantable by users; ADB grants it: pm grant com.altersub android.permission.DUMP -->
+    <uses-permission
+        android:name="android.permission.DUMP"
+        tools:ignore="ProtectedPermissions" />
     <uses-permission
         android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
         tools:targetApi="upside_down_cake" />

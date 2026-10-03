@@ -15,6 +15,7 @@ import com.altersub.provider.CompositeSubtitleProvider
 import com.altersub.server.RemoteAuth
 import com.altersub.server.RemoteController
 import com.altersub.server.WebRemoteServer
+import com.altersub.service.MediaSessionPoller
 import com.altersub.service.SubtitleOverlayService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +44,9 @@ class AlterSubApp : Application(), RemoteController {
     override val activeTrack: StateFlow<SubtitleTrack?> get() = session.activeTrack
     val subtitleIndex: StateFlow<SubtitleIndex?> get() = session.subtitleIndex
     val acceptsScreenDetection: Boolean get() = session.acceptsScreenDetection
+
+    /** Play-state fallback for low-RAM TVs, active once the DUMP permission is granted over ADB. */
+    val mediaSessionPoller by lazy { MediaSessionPoller(this, appScope) }
 
     /** Phone remote pairing (one phone). Its token is persisted, so the phone stays paired across restarts. */
     val remoteAuth by lazy {
@@ -154,6 +158,8 @@ class AlterSubApp : Application(), RemoteController {
         )
 
         // Embedded web server for the phone companion remote, unless it was switched off on the TV
+        mediaSessionPoller.startIfPermitted()
+
         if (getSharedPreferences(REMOTE_PREFS, MODE_PRIVATE).getBoolean(KEY_REMOTE_ENABLED, true)) {
             startWebRemote()
         }

@@ -16,7 +16,7 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
 ### Rule 1: NEVER Use Screen Capture / MediaProjection for Video Frame OCR
 * **Reason**: Netflix and other streaming apps render into a hardware-protected secure surface (Widevine L1 DRM) with `FLAG_SECURE`. Any attempt to capture video pixels via `MediaProjection.createVirtualDisplay()` yields pure black pixels (`#000000`). Continuous frame capture also throttles low-power TV processors.
 * **Prescribed Pattern**: Content detection must rely exclusively on:
-  1. `MediaSessionManager` / `NotificationListenerService` (reads active title & live playhead timestamps).
+  1. `MediaSessionManager` / `NotificationListenerService` (reads active title & live playhead timestamps). On low-RAM TVs, where Android refuses notification access, `MediaSessionPoller` reads the same data from the `media_session` dump with an ADB-granted DUMP permission.
   2. `AccessibilityService` (inspects view hierarchy text nodes on UI title cards when navigating or pausing).
   3. User search / Phone Companion Web Remote override.
 
@@ -59,6 +59,8 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
   * [`TitleSanitizer.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/detection/TitleSanitizer.kt) — regex cleaner for `SxxExx`, years, and UI junk filter.
   * [`AppPackageFilter.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/detection/AppPackageFilter.kt) — target streaming app package registry.
   * [`DetectionArbiter.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/detection/DetectionArbiter.kt) — source priority: MediaSession > user's manual choice > accessibility scraping.
+  * [`MediaSessionDump.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/detection/MediaSessionDump.kt) — parser for the `media_session` dump (Android 9 format; tested against captures from a real TV).
+  * [`DiagLog.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/detection/DiagLog.kt) — debug-only detection diagnostics (tag `AlterSubDiag`); never log other apps' screen text outside it.
 * **`provider/`**:
   * [`StremioSubtitleProvider.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/provider/StremioSubtitleProvider.kt) — zero-auth OpenSubtitles community proxy.
   * [`YtsSubtitleProvider.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/provider/YtsSubtitleProvider.kt) — zero-auth movie subtitle endpoint.
@@ -72,6 +74,7 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
   * [`SubtitleOverlayService.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/service/SubtitleOverlayService.kt) — `TYPE_APPLICATION_OVERLAY` foreground service.
   * [`AccessibilityInspectorService.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/service/AccessibilityInspectorService.kt) — window text scraper.
   * [`MediaNotificationListener.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/service/MediaNotificationListener.kt) — `MediaSessionManager` listener.
+  * [`MediaSessionPoller.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/service/MediaSessionPoller.kt) — low-RAM fallback: polls the `media_session` dump over binder (DUMP permission granted via ADB) every 2 s while a streaming session is active.
 
 ---
 
@@ -109,6 +112,9 @@ adb shell settings put secure accessibility_enabled 1
 
 # Grant notification / media session listener
 adb shell cmd notification allow_listener com.altersub/com.altersub.service.MediaNotificationListener
+
+# Low-RAM TVs (getprop ro.config.low_ram = true) silently ignore the line above; grant this instead
+adb shell pm grant com.altersub android.permission.DUMP
 
 # Record a real-TV test session (debug build; diagnostics use the logcat tag AlterSubDiag)
 bash tools/capture_device_logs.sh <TV_IP>:5555

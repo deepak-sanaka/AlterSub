@@ -124,6 +124,10 @@ AlterSub/
   * `state.position` is a snapshot taken at `state.lastPositionUpdateTime`; while playing it is advanced by the elapsed time × speed (`SubtitleClock.extrapolatePosition`) before calibrating the clock. An unknown position only updates play/pause.
   * When the last target session disappears, the clock is paused and accessibility detection is re-enabled.
   * Feeds timestamp calibrations into `SubtitleClock`.
+* **Strategy A2 — Session polling for low-RAM TVs (`MediaSessionPoller`)**:
+  * Android refuses notification-listener access to every non-system app on low-RAM devices (`ro.config.low_ram=true`, common on 1–2 GB TVs, e.g. the TV tested in §5.2), so Strategy A can't run there.
+  * Instead, with the DUMP permission granted once over ADB (`adb shell pm grant com.altersub android.permission.DUMP`), AlterSub reads the `media_session` service's dump directly over binder (no `dumpsys` process; falls back to spawning one), parses it with `MediaSessionDump`, and applies the active target session's state, position (extrapolated from its `updated` time) and title the same way as Strategy A.
+  * Polls every 2 s while a streaming app has an active session, every 10 s otherwise, and stands aside whenever the notification listener is connected. Inactive sessions (Prime Video leaves one behind) are ignored. The clock is re-anchored only on a real change (pause, resume, seek, or >250 ms drift).
 * **Strategy B — Accessibility Inspector (`AccessibilityInspectorService`)**:
   * Listens to `TYPE_WINDOW_STATE_CHANGED` and `TYPE_WINDOW_CONTENT_CHANGED`.
   * Throttled to execute at most once every 1,500ms to eliminate CPU spikes.
@@ -280,11 +284,19 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
       * Everything checked on the shrunk build: TV screen (font, QR, icons, focus), test subtitles overlay, overlay/notification/accessibility services running (the accessibility service only bound after an emulator reboot, and the debug build behaved the same, so it is an emulator quirk), and every phone-remote route: page and fonts, 401 when unpaired, pairing, 409 for a second phone, a real Stremio search with download and activation, track switching, offset, seek, style + palette, upload, play toggle, and unpairing. No crashes.
     * **Cost on the emulator** (software GL, so absolute numbers are pessimistic; same key presses, old vs new screen): UI-thread time per frame ~1–2 ms for both, GPU command time 13.6–14.6 ms (old) vs 16–17.5 ms (new), total frame time 37–41 ms vs 37–42 ms. No frames are drawn while idle. PSS 42.7 MB (old) vs 42.1 MB (new). Card borders and a second full-screen background fill were removed to get there.
 
+* **Real TV (2026-10-03)**: an Android 9 / API 28 TV with 1.9 GB RAM, 32-bit ARM (`armeabi-v7a`), 1080p at 320 dpi, **`ro.config.low_ram=true`**. Debug build over network ADB, logs recorded with `tools/capture_device_logs.sh`.
+  * **Notification-listener access is impossible** on this TV: `cmd notification allow_listener` is silently ignored and the setting has no screen, because Android never grants it on low-RAM devices. Hence Strategy A2 (§3.2).
+  * **Netflix** (`com.netflix.ninja`): its session reports accurate state and position (verified against AlterSub's clock to ±0.15 s) but **no metadata at all**, and its UI exposes **no accessibility text** (0 texts on every scrape). Netflix can't be identified automatically on Android TV; the user has to search from the phone.
+  * **Hotstar** (`in.startv.hotstar`): its session carries the title ("India vs West Indies: 3rd ODI") and position. Its screen also exposed no accessibility text. **Prime Video** left an inactive, empty session behind.
+  * **KI-3 reproduced on real hardware**: the launcher's long-press menu ("Context Menu") was taken as a title and searched.
+  * **Sync test**: a feature film on Netflix with an English subtitle file timed for the same 126-minute cut. The file ran **10.75 s ahead** of Netflix's version (fixed with the phone's −/+ buttons, constant across the film). Manual "Set time" was hard to get right from Netflix's whole-second progress bar. With Strategy A2, playing, pausing, resuming and seeking were followed within ~2 s.
+  * **Cost** (debug build, Netflix playing, phone remote open; 30 s samples): spawning `dumpsys` cost ~40 ms CPU per poll (2% of one core); the in-process binder dump removed that (child processes 0 ticks). What remains is mainly the phone page's 2 s status poll (NanoHTTPD starts a thread per request, ~1.2% of a core while the page is open) and accessibility events from the player (~1%). AlterSub's PSS was ~21–23 MB.
+  * **Tooling note**: a network change on the TV breaks a running network `adb logcat` stream; the capture script now reconnects.
+
 ### 5.3 Not Yet Verified
-* Any physical Android TV device. API 28 has only been exercised on the emulator above.
-* Any real streaming app: Netflix, Prime Video, Disney+, Hotstar, YouTube. These generally won't install or play on emulator images, which lack Play certification and hardware DRM (Widevine L1).
-* MediaSession detection and position sync against a real player, and the `DetectionArbiter` rules with a live session. Accessibility scraping has been observed on the emulator (only on the TV launcher, see above).
-* Overlay rendering over DRM-protected video, and performance on real 1GB-RAM hardware. Emulator memory figures are indicative only.
+* Prime Video, Disney+, YouTube and other apps' playback on the real TV (only Netflix playback and Hotstar's session were examined), and a TV that is *not* flagged low-RAM (Strategy A).
+* Accessibility title detection on any streaming app: neither Netflix nor Hotstar exposed text.
+* Long sessions on the real TV (memory growth, overlay over hours of playback) and release-build performance there.
 
 See KI-1.
 
@@ -379,7 +391,8 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 
 | ID | Severity | Area | Issue |
 | :--- | :--- | :--- | :--- |
-| KI-1 | High | Verification | Never run on a physical TV or with any streaming app (TV emulator on API 28 now verified) |
+| KI-1 | High | Verification | Only partly verified on a real TV (Netflix + Hotstar on one low-RAM TV) |
+| KI-26 | High | Detection | Netflix publishes no title anywhere, so it can never be detected automatically |
 | KI-2 | High | Sourcing | Only the Stremio source can return results; YTS and official API unreachable |
 | KI-3 | High | Detection | App package filter matches the TV launcher, Settings, and other non-streaming apps |
 | KI-4 | High | Detection | `TitleSanitizer` turns sequels into episodes and misreads numbers as years |
@@ -390,13 +403,23 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 | KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
 | KI-12 | Medium | Platform | Overlay foreground service never stops once started |
 | KI-18 | Medium | Timing | Multiple active media sessions all drive the same clock |
+| KI-27 | Medium | Timing | Subtitle files can be offset from the streaming cut, and the fix is lost on restart |
+| KI-28 | Medium | Platform | Low-RAM TVs need a one-time ADB grant before subtitles follow pause and seek |
+| KI-29 | Low | Performance | The phone page's 2 s status poll costs ~1% CPU on the TV while open |
+| KI-30 | Low | UX | Every phone upload is listed as "Uploaded Subtitle" |
 
 ### 7.2 High Severity
 
-#### KI-1 · Never verified on the target platform — *Confirmed (partly addressed)*
-* **Issue**: Testing so far ran on emulators only. Since 2026-10-03 that includes an Android TV 9 (API 28, 1GB) emulator, on which the overlay, D-pad behaviour, TV launcher and web remote work (§5.2). Nothing has run on a physical TV or alongside any real streaming app, which emulator images generally can't run (no Play certification, no Widevine L1).
-* **Implication**: The project's central premise is unproven. That premise is that Netflix/Prime/Disney+ on Android TV publish a MediaSession with a usable title and position, or expose title text to accessibility. If they don't, automatic detection and sync do nothing. The user is left with manual search plus "Set time", which does work.
-* **Fix direction**: Install on a real TV, enable verbose logging in `MediaNotificationListener` and `AccessibilityInspectorService`, and record what each target app actually reports (title keys, position updates, `lastPositionUpdateTime`). This result should drive the priority of KI-3 to KI-6.
+#### KI-1 · Only partly verified on the target platform — *Confirmed (partly addressed)*
+* **Issue**: First real-TV session done on 2026-10-03 (§5.2). It answered the central question for Netflix: **position and play state are available, the title is not** (neither in its session nor on screen). Hotstar does publish a title. Other apps, a non-low-RAM TV, and long sessions are still untested (§5.3).
+* **Implication**: Automatic *sync* works (Strategy A2 on low-RAM TVs, Strategy A elsewhere); automatic *identification* of Netflix content is impossible with current techniques, so the phone search is the primary path for Netflix.
+* **Fix direction**: Test Prime Video, Disney+ and YouTube the same way (`tools/capture_device_logs.sh` + `AlterSubDiag`), and a non-low-RAM TV. Make the Netflix path fast: remember the last search per app (KI-26) and keep the per-track offset across restarts (KI-27).
+
+#### KI-26 · Netflix can't be identified automatically — *Confirmed on a real TV*
+* **Where**: `com.netflix.ninja` on Android TV.
+* **Issue**: Its media session has state and position but empty metadata, and its UI (drawn by Netflix's own engine) exposes no accessibility text. Neither detection strategy can learn the title.
+* **Implication**: For the most important target app, the user must search on the phone for every title, every time.
+* **Fix direction**: Remember the user's choice per app and resume it when the same app plays again; offer recent searches in the phone page; keep the matched subtitle and offset across restarts (KI-27). Don't spend effort on Netflix screen scraping.
 
 #### KI-2 · Only one subtitle source actually works — *Confirmed*
 * **Where**: `YtsSubtitleProvider.search` (requires `imdbId`), `OpenSubtitlesApiProvider.isEnabled` (requires an API key), `StremioSubtitleProvider.resolveImdbId`.
@@ -485,9 +508,29 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 * **Implication**: The clock can jump between two unrelated positions, and content may flip between titles.
 * **Fix direction**: Follow only the controller that is `STATE_PLAYING` (or the most recently active one), using a per-controller callback that knows its package.
 
+#### KI-27 · Subtitle offset vs. the streaming cut, and lost on restart — *Confirmed on a real TV*
+* **Where**: `TrackOffsets`, `SubtitleSession` (in memory only).
+* **Issue**: A subtitle file for the right cut ran 10.75 s ahead of Netflix's version (a different opening). The user fixed it with −/+, but the offset, the active track and the search results live only in memory: any app restart or update loses them.
+* **Implication**: The user has to search, pick and re-sync again after every restart, and "Set time" by hand is imprecise.
+* **Fix direction**: Persist the active track and its offset per content; add "tap when you hear this line" sync so the offset is found in one tap.
+
+#### KI-28 · Play-state following needs an ADB grant on low-RAM TVs — *Confirmed on a real TV*
+* **Where**: `MediaSessionPoller`, setup screen step 3.
+* **Issue**: Android blocks notification-listener access on low-RAM devices; the fallback needs `pm grant com.altersub android.permission.DUMP`, which only ADB can do. Without it, subtitles don't follow pause or seek.
+* **Implication**: Ordinary users of 1–2 GB TVs can't get automatic sync without a computer.
+* **Fix direction**: Keep the setup screen's ADB instructions; consider a small guided "grant over Wi-Fi" flow, or tap-to-sync as the no-ADB fallback (KI-27).
+
 ### 7.4 Low Severity
 
-None open.
+#### KI-29 · Phone page status polling costs CPU on the TV — *Confirmed on a real TV*
+* **Where**: `WebRemoteHtml` polls `/api/status` every 2 s; NanoHTTPD starts a thread per request.
+* **Issue**: ~1.2% of one core on the low-RAM test TV while the page is open.
+* **Fix direction**: Poll more slowly when nothing changes, stop when the page is hidden (`visibilitychange`), or switch to a long-poll that answers only on change.
+
+#### KI-30 · Uploads are indistinguishable — *Confirmed on a real TV*
+* **Where**: `WebRemoteServer.handleUpload` names every upload "Uploaded Subtitle".
+* **Issue**: Several uploads appear as identical entries in the track list.
+* **Fix direction**: Use the uploaded file's name (sanitised) as the track title.
 
 ---
 
@@ -498,7 +541,7 @@ None open.
   * **Open issues**: High and Medium only (§7.1). Most importantly, automatic detection and sync against real streaming apps on a physical TV is unproven (KI-1), and on the emulator accessibility auto-detection fired on the TV launcher's UI text (KI-3).
 * **Artifact Location**: release `app/build/outputs/apk/release/app-release-unsigned.apk` (~1.7 MB, R8-shrunk; needs a release signing config before distribution), debug `app/build/outputs/apk/debug/app-debug.apk` (~9.7 MB from a clean build, unshrunk; incremental debug builds leave dead space and can be much larger).
 * **Recommended Next Steps** (in order):
-  1. **Device validation (KI-1)**: real Android TV + Netflix/Prime/Disney+; record MediaSession and accessibility output per app.
+  1. **Real-TV follow-up (KI-1, KI-26, KI-27)**: test Prime/Disney+/YouTube and a non-low-RAM TV; persist the active track + offset; remember choices per app; tap-to-sync.
   2. **Sourcing resilience (KI-2)**: propagate the IMDb ID so YTS works; add OpenSubtitles API-key entry.
   3. **Detection accuracy (KI-3, KI-4, KI-5, KI-6)**: explicit package allowlist, sanitizer fixes with real-title tests, candidate scoring.
   4. **Web remote hardening (KI-9)**: upload size limits and validation.
