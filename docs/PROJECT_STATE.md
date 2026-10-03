@@ -216,12 +216,22 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`.
     2. Search "Interstellar" (Interstellar's own track activates; the upload does not follow).
     3. Search "Inception" again (the upload is offered first and re-activated).
   * Back-to-back searches (three pairs): only the second title's track was activated each time, and no tracks from the first search leaked into the list.
+* **Android TV Emulator Verification (2026-10-03)**: AVD `Android_TV_API_28`. That's Android 9 / API 28 (`sdk_google_atv_x86`), 1920×1080 at 320 dpi, with 1GB RAM to mimic target boxes. See §6 for setup.
+  * **Install & permissions**: The APK installs and launches on API 28. The three `adb` permission grants in §6 work unchanged, and no crashes were logged.
+  * **TV launcher**: The app is registered as a `LEANBACK_LAUNCHER` app and appears in the TV launcher's Apps list.
+  * **D-pad**: Three DPAD_DOWN presses reach "Test Subtitle Overlay", and DPAD_CENTER starts it. However, the focused button is only partly scrolled into view (KI-25).
+  * **Overlay**: Renders at 1080p, as the topmost `APPLICATION_OVERLAY` window, in a foreground service (`foregroundId=1001`). Subtitles appeared within ~0.5s of the key press.
+  * **Rule 4 (no focus stealing)**: With the overlay visible, `mCurrentFocus` stays on the app beneath and DPAD_UP keeps moving focus between its buttons. HOME reaches the TV launcher.
+  * **Web remote end to end**: Search "Inception" (5 tracks, 1,190 cues activated), then `seek` to 10:42 and pause. The matching line ("Is out.") rendered over the TV home screen.
+  * **Memory**: `dumpsys meminfo com.altersub` showed TOTAL PSS ≈ 49 MB (Java heap 11 MB, native 17.7 MB). That was with the settings activity still in the back stack, plus the overlay, both services and the web server running.
+  * **Reproduced KI-3/KI-4/KI-5**: Pressing HOME let the accessibility service scrape `com.google.android.tvlauncher` (accepted because the package name contains "tv"). It took the "CUSTOMIZE CHANNELS" button as a title, searched for it, and activated 2,007 cues of an unrelated film over the home screen, with no streaming app involved.
+  * **Reproduced KI-17**: Accessibility and notification access were both enabled, yet both rows still showed "ENABLE".
 
 ### 5.3 Not Yet Verified
-* Any physical Android TV device, and Android 9 / API 28 on any device.
-* Any real streaming app: Netflix, Prime Video, Disney+, Hotstar, YouTube.
-* MediaSession detection and position sync, accessibility title scraping, and the `DetectionArbiter` rules on a device. These are only covered by JVM unit tests.
-* Overlay rendering over DRM-protected video, and performance and memory on 1GB-RAM hardware.
+* Any physical Android TV device. API 28 has only been exercised on the emulator above.
+* Any real streaming app: Netflix, Prime Video, Disney+, Hotstar, YouTube. These generally won't install or play on emulator images, which lack Play certification and hardware DRM (Widevine L1).
+* MediaSession detection and position sync against a real player, and the `DetectionArbiter` rules with a live session. Accessibility scraping has been observed on the emulator (only on the TV launcher, see above).
+* Overlay rendering over DRM-protected video, and performance on real 1GB-RAM hardware. Emulator memory figures are indicative only.
 
 See KI-1.
 
@@ -257,6 +267,27 @@ adb -s <TV_IP>:5555 install -r app\build\outputs\apk\debug\app-debug.apk
 adb -s <TV_IP>:5555 shell "appops set com.altersub SYSTEM_ALERT_WINDOW allow && settings put secure enabled_accessibility_services com.altersub/com.altersub.service.AccessibilityInspectorService && settings put secure accessibility_enabled 1 && cmd notification allow_listener com.altersub/com.altersub.service.MediaNotificationListener"
 ```
 
+### Android TV Emulator (Android 9 / API 28)
+Easiest path: Android Studio → **Device Manager → Create Virtual Device → TV → Television (1080p)** → system image **Pie (API 28) Android TV x86**. Then set RAM to **1024 MB** under advanced settings to mimic target boxes. The API 28 TV image requires accepting the **Android SDK Preview License**.
+
+Command-line equivalent (requires *Android SDK Command-line Tools*):
+```powershell
+# Install the image. The new `android` CLI uses slash-separated package paths.
+& "$env:LOCALAPPDATA\Android\Sdk\cmdline-tools\latest\bin\android.exe" sdk install system-images/android-28/android-tv/x86
+
+# Create the AVD. avdmanager's launcher misreads a bare Java "21" as < 17, so point JAVA_HOME at
+# Android Studio's bundled JBR. Use --% so cmd.exe doesn't split the package id on ';'.
+$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'   # adjust to your install's jbr folder
+'no' | & "$env:LOCALAPPDATA\Android\Sdk\cmdline-tools\latest\bin\avdmanager.bat" --% create avd -n Android_TV_API_28 -k "system-images;android-28;android-tv;x86" -d tv_1080p
+
+# In %USERPROFILE%\.android\avd\Android_TV_API_28.avd\config.ini set:
+#   hw.ramSize=1024   hw.gpu.enabled=yes   hw.keyboard=yes
+
+# Boot
+& "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd Android_TV_API_28 -gpu auto
+```
+Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN` / `KEYCODE_DPAD_CENTER` / `KEYCODE_HOME`, or with the host keyboard's arrow keys.
+
 ---
 
 ## 7. Known Issues & Implications
@@ -275,7 +306,7 @@ adb -s <TV_IP>:5555 shell "appops set com.altersub SYSTEM_ALERT_WINDOW allow && 
 
 | ID | Severity | Area | Issue |
 | :--- | :--- | :--- | :--- |
-| KI-1 | High | Verification | Never run on a TV, on API 28, or with any streaming app |
+| KI-1 | High | Verification | Never run on a physical TV or with any streaming app (TV emulator on API 28 now verified) |
 | KI-2 | High | Sourcing | Only the Stremio source can return results; YTS and official API unreachable |
 | KI-3 | High | Detection | App package filter matches the TV launcher, Settings, and other non-streaming apps |
 | KI-4 | High | Detection | `TitleSanitizer` turns sequels into episodes and misreads numbers as years |
@@ -298,11 +329,12 @@ adb -s <TV_IP>:5555 shell "appops set com.altersub SYSTEM_ALERT_WINDOW allow && 
 | KI-21 | Low | Testing | Live-network test runs in the mandatory unit-test task |
 | KI-22 | Low | Testing | No tests for sleep calculation, provider parsing, web server, orchestration |
 | KI-24 | Low | Build / Config | Unused Leanback dependency; unnecessary `usesCleartextTraffic` |
+| KI-25 | Low | UI | TV setup screen: focused button only partly scrolled into view; weak focus highlight |
 
 ### 7.2 High Severity
 
-#### KI-1 · Never verified on the target platform — *Confirmed*
-* **Issue**: All device testing so far ran on a phone emulator (API 35), using the in-app test button and the web remote. Nothing has run on Android TV, API 28, 1GB hardware, or alongside any streaming app.
+#### KI-1 · Never verified on the target platform — *Confirmed (partly addressed)*
+* **Issue**: Testing so far ran on emulators only. Since 2026-10-03 that includes an Android TV 9 (API 28, 1GB) emulator, on which the overlay, D-pad behaviour, TV launcher and web remote work (§5.2). Nothing has run on a physical TV or alongside any real streaming app, which emulator images generally can't run (no Play certification, no Widevine L1).
 * **Implication**: The project's central premise is unproven. That premise is that Netflix/Prime/Disney+ on Android TV publish a MediaSession with a usable title and position, or expose title text to accessibility. If they don't, automatic detection and sync do nothing. The user is left with manual search plus "Set time", which does work.
 * **Fix direction**: Install on a real TV, enable verbose logging in `MediaNotificationListener` and `AccessibilityInspectorService`, and record what each target app actually reports (title keys, position updates, `lastPositionUpdateTime`). This result should drive the priority of KI-3 to KI-6.
 
@@ -317,7 +349,8 @@ adb -s <TV_IP>:5555 shell "appops set com.altersub SYSTEM_ALERT_WINDOW allow && 
   * Cinemeta's first search hit is used unconditionally, so ambiguous titles can resolve to the wrong film.
 * **Fix direction**: Resolve the IMDb ID once (in the composite or a resolver) and pass it to all providers. Add API-key entry, e.g. a web remote settings card persisted to `SharedPreferences`. Consider year-aware candidate selection.
 
-#### KI-3 · Package filter is far too broad — *Confirmed*
+#### KI-3 · Package filter is far too broad — *Confirmed (reproduced on the Android TV 9 emulator)*
+* **Observed**: Pressing HOME let the accessibility service scrape `com.google.android.tvlauncher`. Within ~1s it detected the launcher's "CUSTOMIZE CHANNELS" button as a title, searched for it, and activated 2,007 cues of an unrelated film over the home screen (§5.2).
 * **Where**: `AppPackageFilter.isTargetApp` accepts any package containing `video`, `media`, or `tv`.
 * **Issue**: This matches `com.google.android.tvlauncher`, `com.google.android.apps.tv.launcherx` (Google TV home), `com.android.tv.settings`, media providers, and any music or IPTV app with those substrings.
 * **Implication**:
@@ -419,12 +452,13 @@ adb -s <TV_IP>:5555 shell "appops set com.altersub SYSTEM_ALERT_WINDOW allow && 
 | KI-14 | `SubtitleTextView.onDraw` calls `split("\n")` on every draw; `SrtParser.cleanHtmlTags` compiles a new `Regex` for every text line. | Violates AGENTS.md Rule 2 and the "zero-allocation" claims. Minor GC pressure on 1GB devices (`onDraw` runs only on cue change). | Split once in `setSubtitle`; precompile the regex as a field. |
 | KI-15 | Parser reads UTF-8 only; overlapping cues aren't supported (binary search returns one; sleep ignores the next start inside an active cue); a missing blank line merges cues; VTT `mm:ss.mmm` timestamps are dropped. | Garbled accents in YTS or phone files; missing lines in SDH subtitles; some uploads silently show nothing. | Charset detection (BOM/heuristic, fall back to Windows-1252); an index that handles overlaps; a proper VTT timestamp path. |
 | KI-16 | The overlay foreground service is started from background contexts (detection callbacks, web server). That works today at `targetSdk 34`, presumably via the overlay-permission/bound-service exemptions. | Raising `targetSdk` to 35 tightens the overlay-permission exemption (a visible overlay window is required first), which could throw `ForegroundServiceStartNotAllowedException`. | Re-test background start when bumping `targetSdk`; keep the service alive rather than starting it on demand. |
-| KI-17 | `MainActivity` refreshes only the overlay permission status. `tvAccessibilityStatus`/`tvNotificationStatus` are never updated. `setTextSizeSp`/`setTextColor` exist but nothing calls them. | Users can't tell from the TV whether detection is enabled. Subtitle size and colour can't be customised. | Check enabled services in `onResume`; expose size, colour and position in the web remote. |
+| KI-17 | `MainActivity` refreshes only the overlay permission status. `tvAccessibilityStatus`/`tvNotificationStatus` are never updated; reproduced on the TV emulator, where both rows still said "ENABLE" while enabled. `setTextSizeSp`/`setTextColor` exist but nothing calls them. | Users can't tell from the TV whether detection is enabled. Subtitle size and colour can't be customised. | Check enabled services in `onResume`; expose size, colour and position in the web remote. |
 | KI-19 | `userOffsetMs` is not reset when content changes. | An offset tuned for one release carries over, so the next title starts out of sync. | Reset (or remember per content key) on content change. |
 | KI-20 | Three separate `OkHttpClient` instances; non-2xx responses are never closed; blocking `execute()` ignores coroutine cancellation. | Extra threads and connection pools on 1GB devices; OkHttp leak warnings; cancelled searches still finish their HTTP calls (results are discarded). | One shared client; `response.use { }`; consider OkHttp's suspend `await` / `Call.cancel()` on cancellation. |
 | KI-21 | `StremioSubtitleProviderLiveTest` runs inside `testDebugUnitTest`, which AGENTS.md makes mandatory before every commit. | Commits are blocked when offline or when Stremio is down; the test is non-deterministic. | Move it to a separate source set/task, or guard it with `Assume` on an env flag. |
 | KI-22 | No tests for `SubtitleIndex.getTimeUntilNextChange`, provider JSON parsing, `WebRemoteServer` routes, or `AlterSubApp` orchestration. | Regressions in sync timing, provider format changes, and endpoint behaviour go unnoticed. | Unit-test the index; MockWebServer for providers; extract orchestration from `Application` for JVM tests. |
 | KI-24 | `androidx.leanback` is declared but unused; `android:usesCleartextTraffic="true"` though all outbound calls are HTTPS (inbound server traffic is unaffected by this flag). | Larger APK than necessary; cleartext is allowed for no reason. | Remove both. |
+| KI-25 | On the 1080p TV emulator, D-pad focus reaches "Test Subtitle Overlay", but the `ScrollView` (32dp padding) leaves the button mostly below the visible area. Default AppCompat buttons give only a faint raised-shadow focus cue. | From the couch, users can't see which button is focused or what they're about to press. | Bottom padding inside the scrolled content (or `clipToPadding=false`); a TV focus style (scale + bright outline) via a state-list drawable, or Leanback/`androidx.tv` components. |
 
 ### 7.5 Resolved
 
@@ -443,8 +477,8 @@ adb -s <TV_IP>:5555 shell "appops set com.altersub SYSTEM_ALERT_WINDOW allow && 
 ## 8. Current Project State & Next Steps
 
 * **Current Status**: Prototype / alpha.
-  * **Works today**: builds and unit tests; the overlay renders on an emulator; the web remote works end to end, including manual search with automatic Stremio download, upload, track selection, offset, and "Set time".
-  * **Unproven**: automatic detection and sync against real streaming apps on Android TV (KI-1).
+  * **Works today**: builds and unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus. The web remote works end to end: manual search with automatic Stremio download, upload, track selection, offset, and "Set time".
+  * **Unproven**: automatic detection and sync against real streaming apps on a physical Android TV (KI-1). On the emulator, accessibility auto-detection fired on the TV launcher's UI text (KI-3).
 * **Artifact Location**: `app/build/outputs/apk/debug/app-debug.apk` (~10.9 MB).
 * **Recommended Next Steps** (in order):
   1. **Device validation (KI-1)**: real Android TV + Netflix/Prime/Disney+; record MediaSession and accessibility output per app.
