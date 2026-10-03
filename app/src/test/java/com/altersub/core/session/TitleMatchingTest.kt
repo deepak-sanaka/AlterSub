@@ -61,6 +61,15 @@ class TitleMatchingTest {
     }
 
     @Test
+    fun testScreenTitlesMustNameAFilmExactly() {
+        assertEquals(sky2025, TitleMatching.verify(ContentMetadata(title = "UNDER THE OPEN SKY"), skyResults))
+        assertEquals(sky2020, TitleMatching.verify(ContentMetadata(title = "Under the Open Sky", year = 2020), skyResults))
+        assertNull(TitleMatching.verify(ContentMetadata(title = "Under the"), skyResults))
+        assertNull(TitleMatching.verify(ContentMetadata(title = "Vertical Video Grid"), listOf(painted)))
+        assertNull(TitleMatching.verify(ContentMetadata(title = "Inception"), emptyList()))
+    }
+
+    @Test
     fun testNoCandidates() {
         assertEquals(Decision.NoMatch, decide("Under the open sky", emptyList()))
     }

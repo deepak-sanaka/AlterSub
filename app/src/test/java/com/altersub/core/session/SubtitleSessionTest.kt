@@ -296,6 +296,48 @@ class SubtitleSessionTest {
     }
 
     @Test
+    fun testAScreenTitleIsTakenOnlyWhenTheCatalogKnowsIt() = runTest {
+        val inception = TitleMatch("tt1375666", "Inception", 2010)
+        catalog["inception"] = listOf(inception)
+        catalog["vertical video grid"] = listOf(TitleMatch("tt0326900", "The Grid", 2004)) // Loose matches only
+        val session = newSession()
+
+        session.onScreenTitle(ContentMetadata(title = "INCEPTION"))
+        advanceUntilIdle()
+        fake.respond("Inception", "inception-1")
+        advanceUntilIdle()
+
+        assertEquals("tt1375666", fake.searched.single().imdbId)
+        assertEquals("inception-1", session.shownText())
+        assertEquals(listOf(inception), session.matches.value)
+
+        // A page header read off the screen next isn't a film, so it doesn't replace the subtitles
+        session.onScreenTitle(ContentMetadata(title = "Vertical Video Grid"))
+        advanceUntilIdle()
+
+        assertEquals("Inception (2010)", session.currentContent.value?.getDisplayName())
+        assertEquals("inception-1", session.shownText())
+        assertEquals(1, fake.searched.size)
+    }
+
+    @Test
+    fun testScreenTitlesAreNotLookedUpWhileTheUserHasChosen() = runTest {
+        catalog["dark"] = listOf(TitleMatch("tt5753856", "Dark", 2017, "series"))
+        val session = newSession()
+        session.searchByText("Inception")
+        advanceUntilIdle()
+        fake.respond("Inception", "inception-1")
+        advanceUntilIdle()
+        val lookups = catalogLookups
+
+        session.onScreenTitle(ContentMetadata(title = "Dark"))
+        advanceUntilIdle()
+
+        assertEquals(lookups, catalogLookups)
+        assertEquals("Inception", session.currentContent.value?.title)
+    }
+
+    @Test
     fun testRecentPicksCanBeRestoredInOneTap() = runTest {
         val session = newSession()
         session.onContentDetected(ContentMetadata(title = "Inception"), DetectionSource.MANUAL)

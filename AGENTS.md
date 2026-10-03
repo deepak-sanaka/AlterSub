@@ -57,7 +57,8 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
   * [`SubtitleIndex.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/core/parser/SubtitleIndex.kt) — flat binary search index ($O(\log N)$) with smart sleep interval calculator.
 * **`detection/`**:
   * [`TitleSanitizer.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/detection/TitleSanitizer.kt) — regex cleaner for `SxxExx`, years, and UI junk filter.
-  * [`AppPackageFilter.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/detection/AppPackageFilter.kt) — target streaming app package registry.
+  * [`AppPackageFilter.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/detection/AppPackageFilter.kt) — the allowlist of followed video apps, by exact package name. Never match by substring: "tv" took in the launcher and Settings.
+  * [`ScreenTitlePicker.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/detection/ScreenTitlePicker.kt) — scores screen texts (view ID, heading, size, rows of cards, headers, UI text) and picks a title only when one clearly leads; `TitleConfirmation` needs two scans to agree. Prefer picking nothing over a guess.
   * [`DetectionArbiter.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/detection/DetectionArbiter.kt) — source priority: MediaSession > user's manual choice > accessibility scraping.
   * [`MediaSessionDump.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/detection/MediaSessionDump.kt) — parser for the `media_session` dump (Android 9 format; tested against captures from a real TV).
   * [`DiagLog.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/detection/DiagLog.kt) — debug-only detection diagnostics (tag `AlterSubDiag`); never log other apps' screen text outside it.
@@ -72,7 +73,7 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
   * [`WebRemoteHtml.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/WebRemoteHtml.kt) — dark-mode mobile remote UI. Server data (track titles come from uploaders and screen text) is only ever inserted with `textContent`; never use `innerHTML` (`WebRemoteServerTest` enforces this).
 * **`service/`**:
   * [`SubtitleOverlayService.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/service/SubtitleOverlayService.kt) — `TYPE_APPLICATION_OVERLAY` foreground service.
-  * [`AccessibilityInspectorService.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/service/AccessibilityInspectorService.kt) — window text scraper.
+  * [`AccessibilityInspectorService.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/service/AccessibilityInspectorService.kt) — reads the allowlisted apps' screen text on its own thread (bounded, debounced) and hands confirmed titles to `SubtitleSession.onScreenTitle`, which takes one only if the catalog knows a film or series by exactly that name.
   * [`MediaNotificationListener.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/service/MediaNotificationListener.kt) — `MediaSessionManager` listener.
   * [`MediaSessionPoller.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/service/MediaSessionPoller.kt) — low-RAM fallback: polls the `media_session` dump over binder (DUMP permission granted via ADB) every 2 s while a streaming session is active.
 
@@ -109,6 +110,8 @@ adb shell appops set com.altersub SYSTEM_ALERT_WINDOW allow
 # Grant accessibility inspector
 adb shell settings put secure enabled_accessibility_services com.altersub/com.altersub.service.AccessibilityInspectorService
 adb shell settings put secure accessibility_enabled 1
+# After reinstalling, the service can stay unbound: run "adb shell settings delete secure enabled_accessibility_services",
+# then the two lines above again
 
 # Grant notification / media session listener
 adb shell cmd notification allow_listener com.altersub/com.altersub.service.MediaNotificationListener

@@ -181,6 +181,8 @@ class AlterSubApp : Application(), RemoteController {
     fun onContentDetected(metadata: ContentMetadata, source: DetectionSource) =
         session.onContentDetected(metadata, source)
 
+    fun onScreenTitle(metadata: ContentMetadata) = session.onScreenTitle(metadata)
+
     override val matches: StateFlow<List<TitleMatch>> get() = session.matches
     override val searchState: StateFlow<SearchState> get() = session.searchState
 

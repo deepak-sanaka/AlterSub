@@ -75,6 +75,16 @@ object TitleMatching {
     }
 
     /**
+     * For a title read off the screen: the film or series with exactly that name (the year, when known, settles
+     * which), or null. Screen text the catalog doesn't know by name is far more likely a page header or a menu
+     * than an obscure film, so it is never searched.
+     */
+    fun verify(metadata: ContentMetadata, candidates: List<TitleMatch>): TitleMatch? {
+        val sameName = candidates.filter { normalize(it.name) == normalize(metadata.title) }
+        return metadata.year?.let { year -> sameName.firstOrNull { it.year == year } } ?: sameName.firstOrNull()
+    }
+
+    /**
      * The films worth offering on the phone: every film sharing the title when there are several, otherwise the
      * catalog's top results (a search for a full title returns many loosely related films).
      */

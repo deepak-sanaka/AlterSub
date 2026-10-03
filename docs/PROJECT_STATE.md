@@ -78,7 +78,7 @@ AlterSub/
 │   │       ├── core/model/SubtitleStyleTest.kt      # Style clamping and colour validation
 │   │       ├── core/parser/                         # SrtParserTest (encodings, VTT, malformed SRT), SubtitleIndexTest
 │   │       ├── core/session/                        # SubtitleSessionTest (races, remembered picks), PickMemoryTest
-│   │       ├── detection/                           # DetectionArbiterTest, TitleSanitizerTest
+│   │       ├── detection/                           # DetectionArbiterTest, TitleSanitizerTest, ScreenTitlePickerTest, AppPackageFilterTest
 │   │       ├── provider/                            # MockWebServer tests per provider, HttpAwaitTest, CompositeSubtitleProviderTest,
 │   │       │                                        #   StremioSubtitleProviderLiveTest (real network, only with -PliveTests)
 │   │       ├── server/                              # WebRemoteServerTest (every route + token checks, port fallback), RemoteAuthTest
@@ -130,11 +130,13 @@ AlterSub/
   * Android refuses notification-listener access to every non-system app on low-RAM devices (`ro.config.low_ram=true`, common on 1–2 GB TVs, e.g. the TV tested in §5.2), so Strategy A can't run there.
   * Instead, with the DUMP permission granted once over ADB (`adb shell pm grant com.altersub android.permission.DUMP`), AlterSub reads the `media_session` service's dump directly over binder (no `dumpsys` process; falls back to spawning one), parses it with `MediaSessionDump`, and applies the active target session's state, position (extrapolated from its `updated` time) and title the same way as Strategy A.
   * Polls every 2 s while a streaming app has an active session, every 10 s otherwise, and stands aside whenever the notification listener is connected. Inactive sessions (Prime Video leaves one behind) are ignored. The clock is re-anchored only on a real change (pause, resume, seek, or >250 ms drift).
+* **Which apps (`AppPackageFilter`)**: an explicit allowlist of video apps, matched by exact package name, for both media sessions and screen text. The TV home screen, Settings and music apps are never read. (Matching names containing "tv", "media" or "video" took in the launcher, whose menus were then searched as film titles, and let Hotstar in only by accident.)
 * **Strategy B — Accessibility Inspector (`AccessibilityInspectorService`)**:
-  * Listens to `TYPE_WINDOW_STATE_CHANGED` and `TYPE_WINDOW_CONTENT_CHANGED`.
-  * Throttled to execute at most once every 1,500ms to eliminate CPU spikes.
-  * Recursively inspects up to 25 view hierarchy text nodes (max depth 6) on target apps (`com.netflix.ninja`, etc.).
-  * Filters raw text through `TitleSanitizer`; the first candidate that survives is taken as the title (KI-5).
+  * Receives `TYPE_WINDOW_STATE_CHANGED` and `TYPE_WINDOW_CONTENT_CHANGED` from the allowlisted apps only: the service narrows its `packageNames` to the allowlist when it connects, so other apps' UI events are never delivered.
+  * One scan per burst of events, 400 ms after the screen settles and at most every 1.5 s, on its own thread (walking another app's views is slow IPC and would delay subtitle cues on the main thread). Reads up to 40 texts from at most 200 nodes (depth 30), each with hints: view ID, class, clickable, heading, height, and whether it sits in a row of cards (a collection with several columns) or in a toolbar, header, menu or dialog.
+  * `ScreenTitlePicker` scores the texts. It rejects buttons, inputs, UI text (actions, row names, durations, ratings, badges, metadata lines, synopses, prompts), IDs that label something else (`toolbar_title`, `…_subtitle`, Leanback guided steps) and anything in a header. It favours a unique title-like view ID, headings, an episode marker and the largest text, and penalises cards. It returns nothing unless one title clearly leads: picking nothing is safe (the phone can search), a wrong title loads the wrong film.
+  * A title counts once two scans in a row agree (`TitleConfirmation`), and is reported once.
+  * `SubtitleSession.onScreenTitle` then checks it against the catalog (§3.4) **before** replacing anything: only a film or series with exactly that name is taken (with its IMDb ID); anything else is ignored and the current subtitles stay.
 * **Source Priority (`DetectionArbiter`)**:
   * A live MediaSession title is authoritative; while one exists, accessibility scraping is skipped entirely.
   * A manual search, track pick, or upload from the phone remote holds until the MediaSession reports a *different* title (e.g. autoplay to the next episode). Re-reported identical session metadata does not override it.
@@ -239,12 +241,13 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
 
 ### 5.1 Automated Unit Tests
 * **Test Runner**: Gradle JUnit 4 on the JVM, with the real `org.json` artifact on the test classpath (Android's stub would throw).
-* **Status (2026-10-03)**: 120 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
+* **Status (2026-10-04)**: 141 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
 * **Test Suites**:
   * [`DetectionArbiterTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/DetectionArbiterTest.kt): MediaSession outranks scraping; a manual choice holds until the session title changes; scraping resumes after sessions end. (Passes)
   * [`SubtitleClockTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/clock/SubtitleClockTest.kt): MediaSession position extrapolation (elapsed time × speed, paused, missing/future snapshot, zero speed). (Passes)
   * [`CompositeSubtitleProviderTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/provider/CompositeSubtitleProviderTest.kt): phone uploads are only offered for their own content; uploads with no detected content are never re-offered. (Passes)
   * [`SrtParserTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/parser/SrtParserTest.kt): Verifies timestamp conversions (`00:01:23,456` $\rightarrow$ ms), multi-line cues, HTML tag cleanup (`<i>`, `<b>`), and binary search interval queries. (Passes)
+  * [`ScreenTitlePickerTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/ScreenTitlePickerTest.kt) and [`AppPackageFilterTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/AppPackageFilterTest.kt): the launcher menu read on the real TV, player overlays, details pages next to rows of cards, browse screens, page headers and Leanback guided steps (from the emulator), prompts, UI text vs real titles, two-scan confirmation; the launcher, Settings and music apps are not followed. (Passes)
   * [`TitleSanitizerTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/TitleSanitizerTest.kt): Verifies regex extraction of `Stranger Things S04E01`, `Wednesday Season 1 Episode 3`, `Inception (2010)`, and rejection of UI junk like `Audio & Subtitles`. (Passes)
   * [`RemoteAuthTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/server/RemoteAuthTest.kt) and [`WebRemoteServerTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/server/WebRemoteServerTest.kt): PINs only while the TV screen is open, lockout after 5 wrong PINs, token persistence and the 8-phone limit; every route rejects missing/unknown tokens (an unpaired upload saves nothing and doesn't desync the connection); fallback to the next free port; the page never uses `innerHTML` (KI-8). (Passes)
   * [`StremioSubtitleProviderLiveTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/provider/StremioSubtitleProviderLiveTest.kt): Live integration test connecting to the internet, querying for "Inception" (`tt1375666`), and returning 5 real English `.srt` download URLs without authentication. (Passes)
@@ -275,7 +278,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
   * **Rule 4 (no focus stealing)**: With the overlay visible, `mCurrentFocus` stays on the app beneath and DPAD_UP keeps moving focus between its buttons. HOME reaches the TV launcher.
   * **Web remote end to end**: Search "Inception" (5 tracks, 1,190 cues activated), then `seek` to 10:42 and pause. The matching line ("Is out.") rendered over the TV home screen.
   * **Memory**: `dumpsys meminfo com.altersub` showed TOTAL PSS ≈ 49 MB (Java heap 11 MB, native 17.7 MB). That was with the settings activity still in the back stack, plus the overlay, both services and the web server running.
-  * **Reproduced KI-3/KI-4/KI-5**: Pressing HOME let the accessibility service scrape `com.google.android.tvlauncher` (accepted because the package name contains "tv"). It took the "CUSTOMIZE CHANNELS" button as a title, searched for it, and activated 2,007 cues of an unrelated film over the home screen, with no streaming app involved.
+  * **Reproduced KI-3/KI-4/KI-5** (KI-3 and KI-5 since fixed): Pressing HOME let the accessibility service scrape `com.google.android.tvlauncher` (accepted because the package name contains "tv"). It took the "CUSTOMIZE CHANNELS" button as a title, searched for it, and activated 2,007 cues of an unrelated film over the home screen, with no streaming app involved.
   * **Reproduced KI-17**: Accessibility and notification access were both enabled, yet both rows still showed "ENABLE". Since fixed.
   * **Web remote pairing (KI-7 fix)**:
     * The TV screen showed the URL and a grouped PIN ("177 770"). Unpaired `/api/status` returned 401.
@@ -301,11 +304,19 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
       * Everything checked on the shrunk build: TV screen (font, QR, icons, focus), test subtitles overlay, overlay/notification/accessibility services running (the accessibility service only bound after an emulator reboot, and the debug build behaved the same, so it is an emulator quirk), and every phone-remote route: page and fonts, 401 when unpaired, pairing, 409 for a second phone, a real Stremio search with download and activation, track switching, offset, seek, style + palette, upload, play toggle, and unpairing. No crashes.
     * **Cost on the emulator** (software GL, so absolute numbers are pessimistic; same key presses, old vs new screen): UI-thread time per frame ~1–2 ms for both, GPU command time 13.6–14.6 ms (old) vs 16–17.5 ms (new), total frame time 37–41 ms vs 37–42 ms. No frames are drawn while idle. PSS 42.7 MB (old) vs 42.1 MB (new). Card borders and a second full-screen background fill were removed to get there.
 
+* **Screen-title detection (2026-10-04, Android TV emulator, with the preinstalled Leanback sample app allowlisted for the test only)**:
+  * The service bound with only window events, and scans ran on their own thread, a few hundred ms after each screen settled.
+  * Browse screen (a row of cards): every card scored below zero and nothing was picked.
+  * Grid page: its header ("Vertical Video Grid", Leanback's title bar) won when it was the only text; text inside a title bar, toolbar, header, menu or dialog is now skipped, and the page then picked nothing.
+  * Guided step (a wizard page): its heading was picked, then rejected by the catalog check ("not a known film or series"), so nothing was replaced; guided steps are now skipped outright.
+  * A real film title on screen is covered by unit tests only: the sample's video catalog doesn't load on the emulator.
+  * Emulator quirk: after a reinstall the accessibility service stayed unbound until its setting was deleted and set again.
+
 * **Real TV (2026-10-03)**: an Android 9 / API 28 TV with 1.9 GB RAM, 32-bit ARM (`armeabi-v7a`), 1080p at 320 dpi, **`ro.config.low_ram=true`**. Debug build over network ADB, logs recorded with `tools/capture_device_logs.sh`.
   * **Notification-listener access is impossible** on this TV: `cmd notification allow_listener` is silently ignored and the setting has no screen, because Android never grants it on low-RAM devices. Hence Strategy A2 (§3.2).
   * **Netflix** (`com.netflix.ninja`): its session reports accurate state and position (verified against AlterSub's clock to ±0.15 s) but **no metadata at all**, and its UI exposes **no accessibility text** (0 texts on every scrape). Netflix can't be identified automatically on Android TV; the user has to search from the phone.
   * **Hotstar** (`in.startv.hotstar`): its session carries the title ("India vs West Indies: 3rd ODI") and position. Its screen also exposed no accessibility text. **Prime Video** left an inactive, empty session behind.
-  * **KI-3 reproduced on real hardware**: the launcher's long-press menu ("Context Menu") was taken as a title and searched.
+  * **KI-3 reproduced on real hardware** (since fixed): the launcher's long-press menu ("Context Menu") was taken as a title and searched.
   * **Sync test**: a feature film on Netflix with an English subtitle file timed for the same 126-minute cut. The file ran **10.75 s ahead** of Netflix's version (fixed with the phone's −/+ buttons, constant across the film). Manual "Set time" was hard to get right from Netflix's whole-second progress bar. With Strategy A2, playing, pausing, resuming and seeking were followed within ~2 s.
   * **Cost** (debug build, Netflix playing, phone remote open; 30 s samples): spawning `dumpsys` cost ~40 ms CPU per poll (2% of one core); the in-process binder dump removed that (child processes 0 ticks). What remains is mainly the phone page's 2 s status poll (NanoHTTPD starts a thread per request, ~1.2% of a core while the page is open) and accessibility events from the player (~1%). AlterSub's PSS was ~21–23 MB.
   * **Tooling note**: a network change on the TV breaks a running network `adb logcat` stream; the capture script now reconnects.
@@ -411,17 +422,16 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 | KI-1 | High | Verification | Only partly verified on a real TV (Netflix + Hotstar on one low-RAM TV) |
 | KI-26 | High | Detection | Netflix publishes no title anywhere, so it can never be detected automatically |
 | KI-2 | High | Sourcing | Only the Stremio source returns results in practice; the official API has no key entry |
-| KI-3 | High | Detection | App package filter matches the TV launcher, Settings, and other non-streaming apps |
 | KI-4 | High | Detection | `TitleSanitizer` turns sequels into episodes and misreads numbers as years |
-| KI-5 | High | Detection | Accessibility takes the first surviving text node as the title |
 | KI-6 | Medium | Detection | MediaSession title is trusted even if generic or partial |
 | KI-9 | Medium | Security | Uploads have no size limit or content validation |
-| KI-10 | Medium | Privacy / Distribution | Accessibility service watches every app and requests unused capabilities |
 | KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
 | KI-12 | Medium | Platform | Overlay foreground service never stops once started |
 | KI-18 | Medium | Timing | Multiple active media sessions all drive the same clock |
 | KI-27 | Medium | Timing | Subtitle files can be offset from the streaming cut; finding the offset is fiddly |
 | KI-28 | Medium | Platform | Low-RAM TVs need a one-time ADB grant before subtitles follow pause and seek |
+| KI-31 | Medium | Detection | Apps outside the allowlist aren't followed at all, and adding one needs a code change |
+| KI-10 | Low | Distribution | Google Play is likely to reject the accessibility service |
 | KI-29 | Low | Performance | The phone page's 2 s status poll costs ~1% CPU on the TV while open |
 
 ### 7.2 High Severity
@@ -447,38 +457,17 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
   * The "multi-source" resilience described in §3.4 and §4 does not exist yet.
 * **Fix direction**: Verify YTS now that it gets IMDb IDs. Add API-key entry, e.g. a web remote settings card persisted to `SharedPreferences`.
 
-#### KI-3 · Package filter is far too broad — *Confirmed (reproduced on the Android TV 9 emulator)*
-* **Observed**: Pressing HOME let the accessibility service scrape `com.google.android.tvlauncher`. Within ~1s it detected the launcher's "CUSTOMIZE CHANNELS" button as a title, searched for it, and activated 2,007 cues of an unrelated film over the home screen (§5.2).
-* **Where**: `AppPackageFilter.isTargetApp` accepts any package containing `video`, `media`, or `tv`.
-* **Issue**: This matches `com.google.android.tvlauncher`, `com.google.android.apps.tv.launcherx` (Google TV home), `com.android.tv.settings`, media providers, and any music or IPTV app with those substrings.
-* **Implication**:
-  * Accessibility scraping runs on the home screen and Settings when no media session is active. It searches for row titles like "For you" or "Apps", wasting network calls and potentially activating wrong subtitles.
-  * Sessions from unrelated apps (e.g. a music app) can drive the clock and content (see KI-18).
-* **Fix direction**: Use the explicit package allowlist only. Optionally let the user add packages from the web remote.
-
 #### KI-4 · TitleSanitizer misparses common movie titles — *Confirmed (reproduced with the same regexes)*
 * **Issue**:
   * The standalone-episode regex `(?:e|ep|episode)\s*(\d{1,3})` has no word boundary, so `Despicable Me 2` and `The Lego Movie 2` become S1E2, and `Se7en` becomes S1E7.
   * The year regex takes in-title numbers: `Blade Runner 2049` gets year 2049 and is shortened to "Blade Runner", and `Wonder Woman 1984` gets year 1984.
-  * The UI-junk filter is an exact-match list, so `Trending Now`, `My List` and `Continue Watching` pass as titles.
 * **Implication**:
   * Sequels are searched as TV series, which skips YTS and usually finds nothing or the wrong thing.
-  * Scraped menu text becomes "content".
   * Manual searches are deliberately *not* run through the sanitizer until this is fixed.
 * **Fix direction**:
   * Require word boundaries and an explicit episode token (`\bE\d`, `\bEp\.?\s*\d`, `\bEpisode\s+\d`).
   * Only treat parenthesised or bracketed years, or trailing years, as release years.
-  * Expand the junk filter to prefix/contains rules.
   * Add tests with real sequel titles.
-
-#### KI-5 · Accessibility picks the first surviving text as the title — *Confirmed*
-* **Where**: `AccessibilityInspectorService.inspectNodeHierarchy`.
-* **Issue**: Text nodes are collected depth-first (max depth 6, max 25 nodes), and the first one the sanitizer doesn't reject wins. There is no notion of "title card", font size, or position.
-* **Implication**: The fallback detector is essentially random on rich UIs, and depth 6 may be too shallow for modern players. Since KI-1 is unverified, it's unknown whether this path ever finds the real title.
-* **Fix direction**:
-  * Score candidates (SxxExx present, length, node class/viewId hints per app).
-  * Require the same title to be seen twice before switching.
-  * Add per-app view-ID rules once real hierarchies are captured.
 
 ### 7.3 Medium Severity
 
@@ -495,14 +484,10 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
   * The remote shows "Active: Uploaded Subtitle" while nothing ever renders.
 * **Fix direction**: Reject uploads over ~2MB. Reject files that parse to 0 cues, and report the error to the phone. Prune old cache files.
 
-#### KI-10 · Accessibility service scope and policy risk — *Confirmed*
-* **Where**: `res/xml/accessibility_service_config.xml`.
-* **Issue**: There is no `android:packageNames` restriction, so the service receives events from every app. It uses `flagIncludeNotImportantViews`, and declares `canRequestFilterKeyEvents` and `typeViewClicked` without using them.
-* **Implication**:
-  * There is extra CPU on every UI event system-wide. The arbiter now skips the tree walk while a session or manual choice is active, but events are still delivered.
-  * The privacy surface is broader than necessary.
-  * Google Play's AccessibilityService policy is likely to reject this non-accessibility use, so distribution is realistically sideload-only.
-* **Fix direction**: Set `packageNames` to the streaming allowlist (KI-3), and remove the unused capabilities and event types.
+#### KI-31 · Only allowlisted apps are followed — *Confirmed (by design)*
+* **Where**: `AppPackageFilter.packages`.
+* **Issue**: Media sessions and screen text are read only from the apps on the list (the fix for the launcher being read as a streaming app). A video app missing from it gets no automatic play/pause/seek following and no detection; only the phone's search and manual timing work there.
+* **Fix direction**: Let the user add the app that's playing from the phone remote (persisted), and extend the list as real apps are tested (KI-1).
 
 #### KI-11 · Full-screen overlay window — *Expected (not reproduced)*
 * **Where**: `SubtitleOverlayService.attachOverlay` uses `MATCH_PARENT × MATCH_PARENT`, window alpha 1.0.
@@ -536,6 +521,11 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 
 ### 7.4 Low Severity
 
+#### KI-10 · Google Play policy for the accessibility service — *Expected*
+* **Where**: `AccessibilityInspectorService`, `res/xml/accessibility_service_config.xml`.
+* **Issue**: The service reads other apps' screens for a purpose that isn't accessibility. Its scope is now minimal: events only from the allowlisted apps (`packageNames` set when it connects), only window changes, no key filtering or click events. It keeps `flagIncludeNotImportantViews` and `flagReportViewIds`, which the title scoring needs.
+* **Implication**: Google Play's AccessibilityService policy is likely to reject it, so distribution is realistically sideload-only. The service is optional: everything except screen-title detection works without it.
+
 #### KI-29 · Phone page status polling costs CPU on the TV — *Confirmed on a real TV*
 * **Where**: `WebRemoteHtml` polls `/api/status` every 2 s; NanoHTTPD starts a thread per request.
 * **Issue**: ~1.2% of one core on the low-RAM test TV while the page is open.
@@ -546,13 +536,13 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 ## 8. Current Project State & Next Steps
 
 * **Current Status**: Prototype / alpha.
-  * **Works today**: builds and 120 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload (named after the file), track selection, per-track offset, "Set time", subtitle style, remembered picks restored after restarts or from a one-tap Recent list, and a "which film?" choice when several films share the searched title (or a year in the search).
-  * **Open issues**: High and Medium only (§7.1). Most importantly, automatic detection and sync against real streaming apps on a physical TV is unproven (KI-1), and on the emulator accessibility auto-detection fired on the TV launcher's UI text (KI-3).
+  * **Works today**: builds and 141 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload (named after the file), track selection, per-track offset, "Set time", subtitle style, remembered picks restored after restarts or from a one-tap Recent list, and a "which film?" choice when several films share the searched title (or a year in the search).
+  * **Open issues**: §7.1. Most importantly, only Netflix and Hotstar have been tried on a real TV (KI-1), and Netflix can't be identified automatically (KI-26). Screen-title detection is tuned on tests and the emulator's Leanback sample, not yet on real apps' screens.
 * **Artifact Location**: release `app/build/outputs/apk/release/app-release-unsigned.apk` (~1.7 MB, R8-shrunk; needs a release signing config before distribution), debug `app/build/outputs/apk/debug/app-debug.apk` (~9.7 MB from a clean build, unshrunk; incremental debug builds leave dead space and can be much larger).
 * **Recommended Next Steps** (in order):
   1. **Real-TV follow-up (KI-1, KI-26, KI-27)**: test Prime/Disney+/YouTube, a non-low-RAM TV, and the remembered-pick restore with Netflix; next-episode offer for series; tap-to-sync.
   2. **Sourcing resilience (KI-2)**: propagate the IMDb ID so YTS works; add OpenSubtitles API-key entry.
-  3. **Detection accuracy (KI-3, KI-4, KI-5, KI-6)**: explicit package allowlist, sanitizer fixes with real-title tests, candidate scoring.
+  3. **Detection accuracy (KI-4, KI-6, KI-31)**: sanitizer fixes with real-title tests, session-title checks, adding apps from the phone. Tune `ScreenTitlePicker` on real apps' screens (`AlterSubDiag` logs each scan's texts, hints and scores).
   4. **Web remote hardening (KI-9)**: upload size limits and validation.
   5. **Overlay lifecycle (KI-11, KI-12)**: bottom-anchored window, stop when idle.
 * **Potential Future Enhancements**:

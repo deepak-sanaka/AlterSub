@@ -1,28 +1,40 @@
 package com.altersub.detection
 
+/**
+ * The video apps AlterSub follows. Only these are read, both their media sessions and their screen text. Everything
+ * else is ignored, including the TV home screen, Settings and music apps (KI-3). Matching by name ("tv", "media")
+ * took in the launcher, whose menus were then searched as film titles.
+ */
 object AppPackageFilter {
 
-    private val TARGET_STREAMING_PACKAGES = setOf(
-        "com.netflix.ninja",                     // Netflix Android TV
-        "com.netflix.mediaclient",               // Netflix Mobile/Tablet build on TV
-        "com.amazon.amazonvideo.livingroom",     // Prime Video Android TV
+    val packages: Set<String> = setOf(
+        "com.netflix.ninja",                     // Netflix (Android TV)
+        "com.netflix.mediaclient",               // Netflix (phone/tablet build)
+        "com.amazon.amazonvideo.livingroom",     // Prime Video (Android TV)
+        "com.amazon.avod.thirdpartyclient",      // Prime Video (phone/tablet build)
         "com.disney.disneyplus",                 // Disney+
-        "com.google.android.youtube.tv",         // YouTube Android TV
-        "com.hotstar.tv",                        // Disney+ Hotstar TV
-        "org.videolan.vlc",                      // VLC
-        "com.plexapp.android",                   // Plex
-        "org.xbmc.kodi",                         // Kodi
+        "in.startv.hotstar",                     // JioHotstar
+        "com.hotstar.tv",                        // Disney+ Hotstar (older TV build)
+        "com.sonyliv",                           // Sony LIV
+        "com.graymatrix.did",                    // ZEE5
+        "com.jio.media.jiotvplus",               // JioTV+
+        "com.google.android.youtube.tv",         // YouTube (Android TV)
+        "com.liskovsoft.smarttubetv.beta",       // SmartTube
         "com.apple.atve.androidtv.appletv",      // Apple TV
         "com.hbomax.android.tv",                 // Max (HBO)
-        "com.wbd.stream"                         // Max Global
+        "com.wbd.stream",                        // Max
+        "com.hulu.livingroomplus",               // Hulu (Android TV)
+        "com.crunchyroll.crunchyroid",           // Crunchyroll
+        "com.mubi",                              // MUBI
+        "com.plexapp.android",                   // Plex
+        "org.jellyfin.androidtv",                // Jellyfin
+        "tv.emby.embyatv",                       // Emby
+        "com.stremio.one",                       // Stremio
+        "org.xbmc.kodi",                         // Kodi
+        "org.videolan.vlc",                      // VLC
+        "com.mxtech.videoplayer.ad",             // MX Player
+        "com.mxtech.videoplayer.pro"             // MX Player Pro
     )
 
-    fun isTargetApp(packageName: String): Boolean {
-        if (packageName.isBlank()) return false
-        if (TARGET_STREAMING_PACKAGES.contains(packageName)) return true
-
-        // Accept any video-related packages
-        val lower = packageName.lowercase()
-        return lower.contains("video") || lower.contains("movie") || lower.contains("media") || lower.contains("tv")
-    }
+    fun isTargetApp(packageName: String): Boolean = packageName in packages
 }

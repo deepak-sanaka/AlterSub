@@ -80,14 +80,44 @@ class SubtitleSession(
     private val trackOffsets = TrackOffsets()
     private var searchJob: Job? = null
     private var activationJob: Job? = null
+    private var screenCheckJob: Job? = null
 
     // Only trustworthy picks are remembered: the user's own choices and media-session titles. Screen-scraped
-    // guesses (KI-3..KI-5, e.g. a launcher menu taken for a title) would just fill the recent list with noise.
+    // guesses (once, a launcher menu taken for a title) would just fill the recent list with noise.
     private var rememberPicks = false
 
     val acceptsScreenDetection: Boolean get() = arbiter.acceptsScreenDetection
 
-    fun onContentDetected(metadata: ContentMetadata, source: DetectionSource) = detect(metadata, source, rawQuery = null)
+    fun onContentDetected(metadata: ContentMetadata, source: DetectionSource) {
+        detect(metadata, source, rawQuery = null)
+    }
+
+    /**
+     * A title read off a streaming app's screen. Screen text is often UI (a page header, a menu), so it is taken
+     * only once the catalog knows a film or series by exactly that name. That's checked before anything is
+     * replaced, so text that fails the check leaves the current subtitles alone.
+     */
+    fun onScreenTitle(metadata: ContentMetadata) {
+        synchronized(detectionLock) {
+            if (!arbiter.acceptsScreenDetection || _currentContent.value?.contentKey == metadata.contentKey) return
+            screenCheckJob?.cancel()
+            screenCheckJob = scope.launch {
+                val candidates = resolver.find(metadata)
+                val match = TitleMatching.verify(metadata, candidates)
+                if (match == null) {
+                    Log.i(TAG, "Ignoring screen text \"${metadata.title}\": not a known film or series")
+                    return@launch
+                }
+                synchronized(detectionLock) {
+                    val verified = metadata.copy(title = match.name, year = match.year ?: metadata.year, imdbId = match.imdbId)
+                    // The phone still lists the other films of that name, to correct the guess
+                    if (detect(verified, DetectionSource.ACCESSIBILITY, rawQuery = null)) {
+                        _matches.value = TitleMatching.options(metadata, candidates)
+                    }
+                }
+            }
+        }
+    }
 
     /**
      * A search typed on the phone, optionally with a year ("Under the Open Sky 2020"). Unlike automatic
@@ -122,9 +152,10 @@ class SubtitleSession(
         }
     }
 
-    private fun detect(detected: ContentMetadata, source: DetectionSource, rawQuery: String?) {
+    /** Returns false if the arbiter kept the current content. */
+    private fun detect(detected: ContentMetadata, source: DetectionSource, rawQuery: String?): Boolean {
         synchronized(detectionLock) {
-            if (!arbiter.accept(detected, source, _currentContent.value)) return
+            if (!arbiter.accept(detected, source, _currentContent.value)) return false
 
             searchJob?.cancel()
             activationJob?.cancel()
@@ -159,6 +190,7 @@ class SubtitleSession(
                 val target = identify(metadata, interactive, rawQuery) ?: return@launch
                 searchSubtitles(target, remembered?.track)
             }
+            return true
         }
     }
 
