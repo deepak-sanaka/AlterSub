@@ -39,6 +39,13 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    testOptions {
+        unitTests.all {
+            // Tests that hit real network services only run when asked for: ./gradlew testDebugUnitTest -PliveTests
+            it.systemProperty("altersub.liveTests", project.hasProperty("liveTests").toString())
+        }
+    }
 }
 
 dependencies {

@@ -193,7 +193,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
 
 ### 5.1 Automated Unit Tests
 * **Test Runner**: Gradle JUnit 4 on the JVM, with the real `org.json` artifact on the test classpath (Android's stub would throw).
-* **Status (2026-10-03)**: 22 tests, all passing. One of them needs internet access (KI-21).
+* **Status (2026-10-03)**: 41 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
 * **Test Suites**:
   * [`DetectionArbiterTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/DetectionArbiterTest.kt): MediaSession outranks scraping; a manual choice holds until the session title changes; scraping resumes after sessions end. (Passes)
   * [`SubtitleClockTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/clock/SubtitleClockTest.kt): MediaSession position extrapolation (elapsed time × speed, paused, missing/future snapshot, zero speed). (Passes)
@@ -249,8 +249,11 @@ See KI-1.
 
 ### Gradle Commands
 ```powershell
-# Run all unit tests
+# Run all unit tests (offline; live-network tests are skipped)
 .\gradlew.bat testDebugUnitTest
+
+# Include tests that hit real network services
+.\gradlew.bat testDebugUnitTest -PliveTests
 
 # Assemble the debug APK
 .\gradlew.bat assembleDebug
@@ -323,7 +326,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
 | KI-12 | Medium | Platform | Overlay foreground service never stops once started |
 | KI-18 | Medium | Timing | Multiple active media sessions all drive the same clock |
-| KI-21 | Low | Testing | Live-network test runs in the mandatory unit-test task |
 | KI-22 | Low | Testing | No tests for sleep calculation, provider parsing, web server, orchestration |
 | KI-24 | Low | Build / Config | Unused Leanback dependency; unnecessary `usesCleartextTraffic` |
 | KI-25 | Low | UI | TV setup screen: focused button only partly scrolled into view; weak focus highlight |
@@ -445,7 +447,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 
 | ID | Issue | Implication | Fix direction |
 | :--- | :--- | :--- | :--- |
-| KI-21 | `StremioSubtitleProviderLiveTest` runs inside `testDebugUnitTest`, which AGENTS.md makes mandatory before every commit. | Commits are blocked when offline or when Stremio is down; the test is non-deterministic. | Move it to a separate source set/task, or guard it with `Assume` on an env flag. |
 | KI-22 | No tests for `SubtitleIndex.getTimeUntilNextChange`, provider JSON parsing, `WebRemoteServer` routes, or `AlterSubApp` orchestration. | Regressions in sync timing, provider format changes, and endpoint behaviour go unnoticed. | Unit-test the index; MockWebServer for providers; extract orchestration from `Application` for JVM tests. |
 | KI-24 | `androidx.leanback` is declared but unused; `android:usesCleartextTraffic="true"` though all outbound calls are HTTPS (inbound server traffic is unaffected by this flag). | Larger APK than necessary; cleartext is allowed for no reason. | Remove both. |
 | KI-25 | On the 1080p TV emulator, D-pad focus reaches "Test Subtitle Overlay", but the `ScrollView` (32dp padding) leaves the button mostly below the visible area. Default AppCompat buttons give only a faint raised-shadow focus cue. | From the couch, users can't see which button is focused or what they're about to press. | Bottom padding inside the scrolled content (or `clipToPadding=false`); a TV focus style (scale + bright outline) via a state-list drawable, or Leanback/`androidx.tv` components. |
@@ -468,6 +469,7 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | 2026-10-03 | **KI-17**: the TV setup screen only showed the overlay permission state; subtitle size/colour/position could not be changed. | Accessibility and notification-access states are read on resume (✅/❌ + buttons disabled when granted); a "Subtitle style" card on the phone remote (`/api/style`) adjusts size, colour and position live, persisted across restarts. Also fixed while verifying: the three permission buttons crashed the app on Android TV builds without those settings screens (`ActivityNotFoundException`); they now show the ADB grant command instead. |
 | 2026-10-03 | **KI-19**: the user sync offset carried over from one title to the next. | `TrackOffsets` remembers the offset per subtitle track: content changes reset it to 0, and switching back to a track restores its own offset. |
 | 2026-10-03 | **KI-20**: three separate OkHttpClients, unclosed non-2xx responses, and blocking `execute()` calls that ignored coroutine cancellation. | One shared `Http.client`; every response closed via `use { }`; a cancellable `Call.await()` cancels the HTTP call with the coroutine (providers re-throw `CancellationException` instead of swallowing it). |
+| 2026-10-03 | **KI-21**: the live Stremio test ran in `testDebugUnitTest`, which AGENTS.md requires before every commit, so commits failed offline. | Live-network tests are skipped via `Assume` unless Gradle is run with `-PliveTests` (passed to the test JVM as `altersub.liveTests`). |
 
 ---
 

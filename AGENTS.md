@@ -80,8 +80,11 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
 Always run these commands from the project root (`C:\Users\deepa\AlterSub`):
 
 ```powershell
-# 1. Run all unit tests (must pass before committing changes)
+# 1. Run all unit tests (must pass before committing changes; works offline)
 .\gradlew.bat testDebugUnitTest
+
+# 1b. Also run tests that hit real network services (e.g. the Stremio proxy)
+.\gradlew.bat testDebugUnitTest -PliveTests
 
 # 2. Compile and package the debug APK
 .\gradlew.bat assembleDebug
