@@ -110,7 +110,12 @@ class WebRemoteServerTest {
         get("/", token = null).use { response ->
             assertEquals(200, response.code)
             assertTrue(response.header("Content-Type")!!.startsWith("text/html"))
-            assertTrue(response.body!!.string().contains("AlterSub Remote"))
+            val page = response.body!!.string()
+            assertTrue(page.contains("AlterSub Remote"))
+            // Track titles are attacker-controlled (release names, search queries); the page must only ever
+            // insert server data as text, so HTML parsing of dynamic content is banned outright (KI-8)
+            assertFalse("The remote page must not use innerHTML", page.contains("innerHTML"))
+            assertFalse("The remote page must not use insertAdjacentHTML", page.contains("insertAdjacentHTML"))
         }
     }
 

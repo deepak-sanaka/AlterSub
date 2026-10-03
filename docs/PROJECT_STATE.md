@@ -215,7 +215,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
   * [`CompositeSubtitleProviderTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/provider/CompositeSubtitleProviderTest.kt): phone uploads are only offered for their own content; uploads with no detected content are never re-offered. (Passes)
   * [`SrtParserTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/parser/SrtParserTest.kt): Verifies timestamp conversions (`00:01:23,456` $\rightarrow$ ms), multi-line cues, HTML tag cleanup (`<i>`, `<b>`), and binary search interval queries. (Passes)
   * [`TitleSanitizerTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/TitleSanitizerTest.kt): Verifies regex extraction of `Stranger Things S04E01`, `Wednesday Season 1 Episode 3`, `Inception (2010)`, and rejection of UI junk like `Audio & Subtitles`. (Passes)
-  * [`RemoteAuthTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/server/RemoteAuthTest.kt) and [`WebRemoteServerTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/server/WebRemoteServerTest.kt): PINs only while the TV screen is open, lockout after 5 wrong PINs, token persistence and the 8-phone limit; every route rejects missing/unknown tokens (an unpaired upload saves nothing and doesn't desync the connection); fallback to the next free port. (Passes)
+  * [`RemoteAuthTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/server/RemoteAuthTest.kt) and [`WebRemoteServerTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/server/WebRemoteServerTest.kt): PINs only while the TV screen is open, lockout after 5 wrong PINs, token persistence and the 8-phone limit; every route rejects missing/unknown tokens (an unpaired upload saves nothing and doesn't desync the connection); fallback to the next free port; the page never uses `innerHTML` (KI-8). (Passes)
   * [`StremioSubtitleProviderLiveTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/provider/StremioSubtitleProviderLiveTest.kt): Live integration test connecting to the internet, querying for "Inception" (`tt1375666`), and returning 5 real English `.srt` download URLs without authentication. (Passes)
 
 ### 5.2 Device & Emulator Verification
@@ -252,6 +252,10 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
     * With the TV screen closed (HOME), the PIN was refused. After five wrong PINs, the TV showed the lockout message and even the right PIN got 429.
     * **Unpair All** emptied the stored tokens; the old token got 401 and the phone page fell back to the PIN prompt. D-pad focus moves to **Turn Off** instead of jumping up the screen when Unpair All disables itself.
     * **Turn Off** stopped the server. With port 8080 held by another process, **Turn On** bound 8081, the TV showed `:8081`, and the page loaded there.
+  * **Track list escaping (KI-8 fix)**:
+    * Rendering tracks whose title, source and language held `<img onerror>`, `<b onmouseover>` and `<svg onload>` payloads ran nothing and created no elements; the payloads showed as literal text, as did `Tom & Jerry's <Movie>`.
+    * Clicking a track whose id was `x')+alert(1)+('` sent exactly that id to `/api/select-track`.
+    * A real "Inception" search still listed 5 tracks, and clicking one switched the active track.
 
 ### 5.3 Not Yet Verified
 * Any physical Android TV device. API 28 has only been exercised on the emulator above.
@@ -343,7 +347,6 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 | KI-4 | High | Detection | `TitleSanitizer` turns sequels into episodes and misreads numbers as years |
 | KI-5 | High | Detection | Accessibility takes the first surviving text node as the title |
 | KI-6 | Medium | Detection | MediaSession title is trusted even if generic or partial |
-| KI-8 | Medium | Security | Stored XSS in the web remote's track list |
 | KI-9 | Medium | Security | Uploads have no size limit or content validation |
 | KI-10 | Medium | Privacy / Distribution | Accessibility service watches every app and requests unused capabilities |
 | KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
@@ -408,14 +411,6 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 * **Implication**: A bad session title triggers a wrong search, and the accessibility fallback can't correct it. The user must manual-search, and that choice holds until the session title changes.
 * **Fix direction**: Reject titles equal to the app label, and combine `TITLE` with `ARTIST`/`ALBUM`/`DISPLAY_SUBTITLE` per app. Validate on device (KI-1).
 
-#### KI-8 · Stored XSS in the web remote — *Confirmed*
-* **Where**: `renderTracks()` in `WebRemoteHtml.kt` builds HTML with unescaped `t.title`, `t.source`, `t.id` and `t.language`.
-* **Issue**: Track titles come from OpenSubtitles release names (uploader-controlled), manual search queries, and scraped screen text.
-* **Implication**:
-  * A crafted release name or search query runs script in every phone viewing the remote. That script runs in the remote's own origin, so it can read the pairing token from `localStorage` and drive every endpoint.
-  * Titles containing `<` or `'` also break the list or the `onclick` handler.
-* **Fix direction**: Build the list with `document.createElement` + `textContent`, and attach handlers with `addEventListener`.
-
 #### KI-9 · Uploads are not limited or validated — *Confirmed*
 * **Where**: `WebRemoteServer.handleUpload`.
 * **Issue**: There is no size cap. Any file is saved as `.srt` in `cacheDir/uploads`, and a file that parses to 0 cues is still marked active. Neither `cacheDir/uploads` nor `cacheDir/subtitles` is ever pruned.
@@ -477,7 +472,8 @@ None open. All eleven low-severity issues (KI-13–17, KI-19–22, KI-24, KI-25)
 | 2026-10-03 | **KI-21**: the live Stremio test ran in `testDebugUnitTest`, which AGENTS.md requires before every commit, so commits failed offline. | Live-network tests are skipped via `Assume` unless Gradle is run with `-PliveTests` (passed to the test JVM as `altersub.liveTests`). |
 | 2026-10-03 | **KI-22**: no tests for sleep calculation, provider parsing, web server routes, or orchestration. | `SubtitleIndexTest`; MockWebServer tests for all three providers (base URLs injectable); `WebRemoteServerTest` over a `RemoteController` interface; orchestration extracted from `AlterSubApp` into `SubtitleSession` with `SubtitleSessionTest` covering stale results, user-choice precedence, upload scoping and per-track offsets. 67 tests run offline. |
 | 2026-10-03 | **KI-24**: unused `androidx.leanback` dependency and an unnecessary `usesCleartextTraffic="true"`. | Both removed, along with the unused `RECEIVE_BOOT_COMPLETED` permission (no boot receiver exists). Verified on the TV emulator: HTTPS searches/downloads, the web remote (inbound HTTP) and the TV launcher entry all still work. |
-| 2026-10-03 | **KI-7**: the web remote had no authentication and was reachable by anyone on the LAN, ran permanently with no off switch, and failed silently (while the TV still showed the URL) if port 8080 was taken. | `RemoteAuth` pairing: a 6-digit PIN shown only while the TV setup screen is open, exchanged for a per-phone token required on every `/api/*` call; 5 wrong PINs lock pairing until the screen is reopened. The TV can unpair all phones and turn the remote off (persisted). The server falls back to ports 8081–8089 and the TV shows the port actually bound. Verified on the TV emulator (§5.2). Remaining exposure: plain HTTP on the LAN, and stored XSS (KI-8) can read the token. |
+| 2026-10-03 | **KI-7**: the web remote had no authentication and was reachable by anyone on the LAN, ran permanently with no off switch, and failed silently (while the TV still showed the URL) if port 8080 was taken. | `RemoteAuth` pairing: a 6-digit PIN shown only while the TV setup screen is open, exchanged for a per-phone token required on every `/api/*` call; 5 wrong PINs lock pairing until the screen is reopened. The TV can unpair all phones and turn the remote off (persisted). The server falls back to ports 8081–8089 and the TV shows the port actually bound. Verified on the TV emulator (§5.2). Remaining exposure: plain HTTP on the LAN. (Stored XSS could also read the token until KI-8 was fixed.) |
+| 2026-10-03 | **KI-8**: `renderTracks()` built the track list as an HTML string from unescaped track titles, sources, languages and ids (uploader-controlled release names, search queries, scraped text), so a crafted title ran script in every phone viewing the remote and could read its pairing token. Titles with `<` or `'` also broke the list or the click handler. | The list is built with `createElement` + `textContent`, and each item's click handler holds its track id directly. The status messages ("Searching...", "No tracks found") use the same helper, so the page no longer uses `innerHTML` at all; `WebRemoteServerTest` fails if `innerHTML`/`insertAdjacentHTML` reappears. Verified on the TV emulator (§5.2). |
 | 2026-10-03 | **KI-25**: on the TV setup screen the focused "Test Subtitle Overlay" button was mostly scrolled off-screen, and focus was only a faint shadow. | Padding moved from the `ScrollView` onto its content so focused items scroll fully into view; a `Widget.AlterSub.TvButton` style (yellow fill + black text when focused, white for the primary button, dimmed when disabled, 1.08× scale-up) with `clipToPadding="false"` so the scale isn't cropped. Verified on the 1080p TV emulator. |
 
 ---
@@ -492,7 +488,7 @@ None open. All eleven low-severity issues (KI-13–17, KI-19–22, KI-24, KI-25)
   1. **Device validation (KI-1)**: real Android TV + Netflix/Prime/Disney+; record MediaSession and accessibility output per app.
   2. **Sourcing resilience (KI-2)**: propagate the IMDb ID so YTS works; add OpenSubtitles API-key entry.
   3. **Detection accuracy (KI-3, KI-4, KI-5, KI-6)**: explicit package allowlist, sanitizer fixes with real-title tests, candidate scoring.
-  4. **Web remote hardening (KI-8, KI-9)**: escaped rendering, upload limits.
+  4. **Web remote hardening (KI-9)**: upload size limits and validation.
   5. **Overlay lifecycle (KI-11, KI-12)**: bottom-anchored window, stop when idle.
 * **Potential Future Enhancements**:
   1. **TMDb Direct API integration**: For exotic media titles where Cinemeta auto-resolution returns multiple candidates.

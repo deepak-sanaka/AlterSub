@@ -36,6 +36,7 @@ object WebRemoteHtml {
         .track-item.active { border-color: #FFE500; background: #2E2A14; }
         .track-name { font-size: 14px; font-weight: 500; }
         .track-source { font-size: 11px; color: #AAA; margin-top: 2px; }
+        .track-message { font-size: 13px; text-align: center; padding: 16px; }
         .badge { background: #333; font-size: 10px; padding: 2px 6px; border-radius: 4px; color: #DDD; }
         .style-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
         .style-label { width: 64px; color: #AAA; font-size: 13px; }
@@ -128,7 +129,7 @@ object WebRemoteHtml {
     <div class="card">
         <h2 style="font-size:15px; color:#AAA;">AVAILABLE SUBTITLE TRACKS</h2>
         <div id="trackList">
-            <div style="font-size:13px; color:#666; text-align:center; padding:16px;">No tracks loaded</div>
+            <div class="track-message" style="color:#666;">No tracks loaded</div>
         </div>
     </div>
     </div>
@@ -221,21 +222,40 @@ object WebRemoteHtml {
             } catch(e) {}
         }
 
+        function textElement(tag, className, text) {
+            const element = document.createElement(tag);
+            element.className = className;
+            element.textContent = text;
+            return element;
+        }
+
+        // Track fields come from uploaders' release names, search queries and scraped screen text, so they are
+        // only ever set as text (never parsed as HTML), and each click handler holds its track id directly
         function renderTracks(tracks, activeId) {
-            const list = document.getElementById('trackList');
             if (tracks.length === 0) {
-                list.innerHTML = '<div style="font-size:13px; color:#666; text-align:center; padding:16px;">No tracks found</div>';
+                showTrackMessage('No tracks found', '#666');
                 return;
             }
-            list.innerHTML = tracks.map(t => `
-                <div class="track-item ${'$'}{t.id === activeId ? 'active' : ''}" onclick="selectTrack('${'$'}{t.id}')">
-                    <div>
-                        <div class="track-name">${'$'}{t.title}</div>
-                        <div class="track-source">${'$'}{t.source}</div>
-                    </div>
-                    <span class="badge">${'$'}{t.language.toUpperCase()}</span>
-                </div>
-            `).join('');
+            const list = document.getElementById('trackList');
+            list.textContent = '';
+            for (const t of tracks) {
+                const item = document.createElement('div');
+                item.className = t.id === activeId ? 'track-item active' : 'track-item';
+                item.addEventListener('click', () => selectTrack(t.id));
+
+                const text = document.createElement('div');
+                text.append(textElement('div', 'track-name', t.title), textElement('div', 'track-source', t.source));
+                item.append(text, textElement('span', 'badge', String(t.language || '').toUpperCase()));
+                list.appendChild(item);
+            }
+        }
+
+        function showTrackMessage(message, color) {
+            const element = textElement('div', 'track-message', message);
+            element.style.color = color;
+            const list = document.getElementById('trackList');
+            list.textContent = '';
+            list.appendChild(element);
         }
 
         async function adjustOffset(delta) {
@@ -316,7 +336,7 @@ object WebRemoteHtml {
         async function searchManual() {
             const query = document.getElementById('searchInput').value;
             if (!query) return;
-            document.getElementById('trackList').innerHTML = '<div style="font-size:13px; color:#AAA; text-align:center; padding:16px;">Searching...</div>';
+            showTrackMessage('Searching...', '#AAA');
             await api('/api/search?q=' + encodeURIComponent(query));
             setTimeout(fetchStatus, 1500);
         }
