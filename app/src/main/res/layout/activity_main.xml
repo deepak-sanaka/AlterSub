@@ -2,13 +2,15 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/background_dark"
-    android:padding="32dp">
+    android:background="@color/background_dark">
 
+    <!-- Padding lives on the content, not the ScrollView: a padded ScrollView stops scrolling
+         with the last focused button mostly out of view on a TV -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:padding="32dp">
 
         <!-- Title Header -->
         <TextView
@@ -73,12 +75,14 @@
             android:textSize="18sp"
             android:textStyle="bold" />
 
-        <!-- 1. Overlay Permission -->
+        <!-- 1. Overlay Permission. clipToPadding="false" on the cards and the test row lets focused
+             buttons scale up (Widget.AlterSub.TvButton) into the padding instead of being cropped -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:background="@color/card_bg"
+            android:clipToPadding="false"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:padding="16dp">
@@ -108,6 +112,7 @@
 
             <Button
                 android:id="@+id/btnOverlayPermission"
+                style="@style/Widget.AlterSub.TvButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Grant" />
@@ -119,6 +124,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:background="@color/card_bg"
+            android:clipToPadding="false"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:padding="16dp">
@@ -148,6 +154,7 @@
 
             <Button
                 android:id="@+id/btnAccessibilityPermission"
+                style="@style/Widget.AlterSub.TvButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Enable" />
@@ -159,6 +166,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:background="@color/card_bg"
+            android:clipToPadding="false"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:padding="16dp">
@@ -188,6 +196,7 @@
 
             <Button
                 android:id="@+id/btnNotificationPermission"
+                style="@style/Widget.AlterSub.TvButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Enable" />
@@ -197,20 +206,19 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="16dp"
+            android:clipToPadding="false"
             android:gravity="center_horizontal"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp">
 
             <Button
                 android:id="@+id/btnTestSubtitle"
+                style="@style/Widget.AlterSub.TvButton.Primary"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:backgroundTint="@color/accent"
-                android:paddingLeft="24dp"
-                android:paddingRight="24dp"
-                android:text="🎬 Test Subtitle Overlay"
-                android:textColor="#000000"
-                android:textStyle="bold" />
+                android:text="🎬 Test Subtitle Overlay" />
         </LinearLayout>
 
     </LinearLayout>

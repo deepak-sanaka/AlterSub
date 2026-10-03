@@ -5,4 +5,20 @@
         <item name="colorPrimaryDark">@color/primary_dark</item>
         <item name="colorAccent">@color/accent</item>
     </style>
+
+    <!-- D-pad friendly button: high-contrast focused state plus a slight scale-up -->
+    <style name="Widget.AlterSub.TvButton" parent="Widget.AppCompat.Button">
+        <item name="android:background">@drawable/bg_tv_button</item>
+        <item name="android:textColor">@color/tv_button_text</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:minWidth">140dp</item>
+        <item name="android:paddingLeft">24dp</item>
+        <item name="android:paddingRight">24dp</item>
+        <item name="android:stateListAnimator">@animator/tv_focus_scale</item>
+    </style>
+
+    <style name="Widget.AlterSub.TvButton.Primary">
+        <item name="android:background">@drawable/bg_tv_button_primary</item>
+        <item name="android:textColor">@color/black</item>
+    </style>
 </resources>

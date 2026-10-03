@@ -231,7 +231,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
 * **Android TV Emulator Verification (2026-10-03)**: AVD `Android_TV_API_28`. That's Android 9 / API 28 (`sdk_google_atv_x86`), 1920×1080 at 320 dpi, with 1GB RAM to mimic target boxes. See §6 for setup.
   * **Install & permissions**: The APK installs and launches on API 28. The three `adb` permission grants in §6 work unchanged, and no crashes were logged.
   * **TV launcher**: The app is registered as a `LEANBACK_LAUNCHER` app and appears in the TV launcher's Apps list.
-  * **D-pad**: Three DPAD_DOWN presses reach "Test Subtitle Overlay", and DPAD_CENTER starts it. However, the focused button is only partly scrolled into view (KI-25).
+  * **D-pad**: Three DPAD_DOWN presses reach "Test Subtitle Overlay", and DPAD_CENTER starts it. At the time, the focused button was only partly scrolled into view (KI-25, since fixed in §7.5).
   * **Overlay**: Renders at 1080p, as the topmost `APPLICATION_OVERLAY` window, in a foreground service (`foregroundId=1001`). Subtitles appeared within ~0.5s of the key press.
   * **Rule 4 (no focus stealing)**: With the overlay visible, `mCurrentFocus` stays on the app beneath and DPAD_UP keeps moving focus between its buttons. HOME reaches the TV launcher.
   * **Web remote end to end**: Search "Inception" (5 tracks, 1,190 cues activated), then `seek` to 10:42 and pause. The matching line ("Is out.") rendered over the TV home screen.
@@ -334,7 +334,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
 | KI-12 | Medium | Platform | Overlay foreground service never stops once started |
 | KI-18 | Medium | Timing | Multiple active media sessions all drive the same clock |
-| KI-25 | Low | UI | TV setup screen: focused button only partly scrolled into view; weak focus highlight |
 
 ### 7.2 High Severity
 
@@ -453,7 +452,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 
 | ID | Issue | Implication | Fix direction |
 | :--- | :--- | :--- | :--- |
-| KI-25 | On the 1080p TV emulator, D-pad focus reaches "Test Subtitle Overlay", but the `ScrollView` (32dp padding) leaves the button mostly below the visible area. Default AppCompat buttons give only a faint raised-shadow focus cue. | From the couch, users can't see which button is focused or what they're about to press. | Bottom padding inside the scrolled content (or `clipToPadding=false`); a TV focus style (scale + bright outline) via a state-list drawable, or Leanback/`androidx.tv` components. |
 
 ### 7.5 Resolved
 
@@ -476,6 +474,7 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | 2026-10-03 | **KI-21**: the live Stremio test ran in `testDebugUnitTest`, which AGENTS.md requires before every commit, so commits failed offline. | Live-network tests are skipped via `Assume` unless Gradle is run with `-PliveTests` (passed to the test JVM as `altersub.liveTests`). |
 | 2026-10-03 | **KI-22**: no tests for sleep calculation, provider parsing, web server routes, or orchestration. | `SubtitleIndexTest`; MockWebServer tests for all three providers (base URLs injectable); `WebRemoteServerTest` over a `RemoteController` interface; orchestration extracted from `AlterSubApp` into `SubtitleSession` with `SubtitleSessionTest` covering stale results, user-choice precedence, upload scoping and per-track offsets. 67 tests run offline. |
 | 2026-10-03 | **KI-24**: unused `androidx.leanback` dependency and an unnecessary `usesCleartextTraffic="true"`. | Both removed, along with the unused `RECEIVE_BOOT_COMPLETED` permission (no boot receiver exists). Verified on the TV emulator: HTTPS searches/downloads, the web remote (inbound HTTP) and the TV launcher entry all still work. |
+| 2026-10-03 | **KI-25**: on the TV setup screen the focused "Test Subtitle Overlay" button was mostly scrolled off-screen, and focus was only a faint shadow. | Padding moved from the `ScrollView` onto its content so focused items scroll fully into view; a `Widget.AlterSub.TvButton` style (yellow fill + black text when focused, white for the primary button, dimmed when disabled, 1.08× scale-up) with `clipToPadding="false"` so the scale isn't cropped. Verified on the 1080p TV emulator. |
 
 ---
 

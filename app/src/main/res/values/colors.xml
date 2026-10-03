@@ -8,4 +8,8 @@
     <color name="text_secondary">#AAAAAA</color>
     <color name="status_green">#00E676</color>
     <color name="status_red">#FF5252</color>
+    <color name="black">#000000</color>
+    <color name="button_idle">#3A3A3A</color>
+    <color name="button_disabled">#262626</color>
+    <color name="text_disabled">#6E6E6E</color>
 </resources>
