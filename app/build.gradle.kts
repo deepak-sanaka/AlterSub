@@ -41,6 +41,9 @@ android {
     }
 
     testOptions {
+        // android.jar stubs (SystemClock, Log) return defaults instead of throwing, so JVM tests can
+        // construct SubtitleClock and exercise code paths that log
+        unitTests.isReturnDefaultValues = true
         unitTests.all {
             // Tests that hit real network services only run when asked for: ./gradlew testDebugUnitTest -PliveTests
             it.systemProperty("altersub.liveTests", project.hasProperty("liveTests").toString())

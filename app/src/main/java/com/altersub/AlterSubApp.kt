@@ -14,6 +14,7 @@ import com.altersub.core.parser.SubtitleIndex
 import com.altersub.detection.DetectionArbiter
 import com.altersub.detection.DetectionSource
 import com.altersub.provider.CompositeSubtitleProvider
+import com.altersub.server.RemoteController
 import com.altersub.server.WebRemoteServer
 import com.altersub.service.SubtitleOverlayService
 import kotlinx.coroutines.CoroutineScope
@@ -29,20 +30,20 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileInputStream
 
-class AlterSubApp : Application() {
+class AlterSubApp : Application(), RemoteController {
 
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    val clock = SubtitleClock()
+    override val clock = SubtitleClock()
     val compositeProvider = CompositeSubtitleProvider()
 
     private val _currentContent = MutableStateFlow<ContentMetadata?>(null)
-    val currentContent: StateFlow<ContentMetadata?> = _currentContent.asStateFlow()
+    override val currentContent: StateFlow<ContentMetadata?> = _currentContent.asStateFlow()
 
     private val _availableTracks = MutableStateFlow<List<SubtitleTrack>>(emptyList())
-    val availableTracks: StateFlow<List<SubtitleTrack>> = _availableTracks.asStateFlow()
+    override val availableTracks: StateFlow<List<SubtitleTrack>> = _availableTracks.asStateFlow()
 
     private val _activeTrack = MutableStateFlow<SubtitleTrack?>(null)
-    val activeTrack: StateFlow<SubtitleTrack?> = _activeTrack.asStateFlow()
+    override val activeTrack: StateFlow<SubtitleTrack?> = _activeTrack.asStateFlow()
 
     private val _subtitleIndex = MutableStateFlow<SubtitleIndex?>(null)
     val subtitleIndex: StateFlow<SubtitleIndex?> = _subtitleIndex.asStateFlow()
@@ -60,11 +61,11 @@ class AlterSubApp : Application() {
     val acceptsScreenDetection: Boolean get() = arbiter.acceptsScreenDetection
 
     private val _overlayRunning = MutableStateFlow(false)
-    val overlayRunning: StateFlow<Boolean> = _overlayRunning.asStateFlow()
+    override val overlayRunning: StateFlow<Boolean> = _overlayRunning.asStateFlow()
 
     // Why subtitles can't be displayed right now (shown on the phone remote), or null when the overlay is fine
     private val _overlayError = MutableStateFlow<String?>(null)
-    val overlayError: StateFlow<String?> = _overlayError.asStateFlow()
+    override val overlayError: StateFlow<String?> = _overlayError.asStateFlow()
 
     fun onOverlayStarted() {
         _overlayRunning.value = true
@@ -82,10 +83,10 @@ class AlterSubApp : Application() {
     }
 
     private val _subtitleStyle = MutableStateFlow(SubtitleStyle())
-    val subtitleStyle: StateFlow<SubtitleStyle> = _subtitleStyle.asStateFlow()
+    override val subtitleStyle: StateFlow<SubtitleStyle> = _subtitleStyle.asStateFlow()
 
     /** Applies [change] to the subtitle style and persists it so it survives restarts. */
-    fun updateSubtitleStyle(change: (SubtitleStyle) -> SubtitleStyle) {
+    override fun updateSubtitleStyle(change: (SubtitleStyle) -> SubtitleStyle) {
         val style = _subtitleStyle.updateAndGet(change)
         getSharedPreferences(STYLE_PREFS, MODE_PRIVATE).edit()
             .putFloat(KEY_TEXT_SIZE, style.textSizeSp)
@@ -107,7 +108,7 @@ class AlterSubApp : Application() {
 
         // Start embedded web server for mobile companion remote
         try {
-            webRemoteServer = WebRemoteServer(this, 8080)
+            webRemoteServer = WebRemoteServer(this, File(cacheDir, "uploads"), 8080)
             webRemoteServer?.start()
             Log.i("AlterSubApp", "Companion Web Remote started on port 8080")
         } catch (e: Exception) {
@@ -115,7 +116,7 @@ class AlterSubApp : Application() {
         }
     }
 
-    fun onContentDetected(metadata: ContentMetadata, source: DetectionSource) {
+    override fun onContentDetected(metadata: ContentMetadata, source: DetectionSource) {
         synchronized(detectionLock) {
             if (!arbiter.accept(metadata, source, _currentContent.value)) return
 
@@ -159,14 +160,14 @@ class AlterSubApp : Application() {
     }
 
     /** User picked a track on the phone remote. */
-    fun selectTrack(track: SubtitleTrack) {
+    override fun selectTrack(track: SubtitleTrack) {
         synchronized(detectionLock) {
             arbiter.onUserChoice()
             activateTrack(track)
         }
     }
 
-    fun loadDirectSrt(file: File, displayName: String) {
+    override fun loadDirectSrt(file: File, displayName: String) {
         synchronized(detectionLock) {
             val track = compositeProvider.addLocalTrack(file, displayName, _currentContent.value)
             _availableTracks.value = listOf(track) + _availableTracks.value

@@ -1,8 +1,6 @@
 package com.altersub.server
 
-import android.content.Context
 import android.util.Log
-import com.altersub.AlterSubApp
 import com.altersub.core.model.ContentMetadata
 import com.altersub.core.model.SubtitleStyle
 import com.altersub.detection.DetectionSource
@@ -14,7 +12,8 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 
 class WebRemoteServer(
-    private val context: Context,
+    private val controller: RemoteController,
+    private val uploadDir: File,
     port: Int = 8080
 ) : NanoHTTPD(port) {
 
@@ -39,8 +38,8 @@ class WebRemoteServer(
                 uri == "/api/offset" && method == Method.POST -> {
                     val params = session.parms
                     val delta = params["delta"]?.toLongOrNull() ?: 0L
-                    AlterSubApp.instance.clock.adjustOffset(delta)
-                    jsonResponse(JSONObject().put("success", true).put("offsetMs", AlterSubApp.instance.clock.userOffsetMs.value))
+                    controller.clock.adjustOffset(delta)
+                    jsonResponse(JSONObject().put("success", true).put("offsetMs", controller.clock.userOffsetMs.value))
                 }
 
                 uri == "/api/seek" && method == Method.POST -> {
@@ -49,7 +48,7 @@ class WebRemoteServer(
                     if (positionMs == null || positionMs < 0) {
                         jsonResponse(JSONObject().put("error", "positionMs must be a non-negative number"), Response.Status.BAD_REQUEST)
                     } else {
-                        val clock = AlterSubApp.instance.clock
+                        val clock = controller.clock
                         clock.seekTo(positionMs)
                         jsonResponse(JSONObject().put("success", true).put("positionMs", clock.getPositionMs()))
                     }
@@ -58,8 +57,7 @@ class WebRemoteServer(
                 uri == "/api/style" && method == Method.POST -> {
                     // Relative steps and named colours only; SubtitleStyle clamps every value to a legible range
                     val params = session.parms
-                    val app = AlterSubApp.instance
-                    app.updateSubtitleStyle { style ->
+                    controller.updateSubtitleStyle { style ->
                         if (params["reset"] == "1") {
                             SubtitleStyle()
                         } else {
@@ -69,20 +67,20 @@ class WebRemoteServer(
                             params["color"]?.let(stepped::withColor) ?: stepped
                         }
                     }
-                    jsonResponse(JSONObject().put("success", true).put("style", styleJson(app.subtitleStyle.value)))
+                    jsonResponse(JSONObject().put("success", true).put("style", styleJson(controller.subtitleStyle.value)))
                 }
 
                 uri == "/api/toggle-play" && method == Method.POST -> {
-                    val clock = AlterSubApp.instance.clock
+                    val clock = controller.clock
                     if (clock.isPlaying.value) clock.pause() else clock.play()
                     jsonResponse(JSONObject().put("success", true).put("isPlaying", clock.isPlaying.value))
                 }
 
                 uri == "/api/select-track" && method == Method.POST -> {
                     val trackId = session.parms["id"] ?: ""
-                    val track = AlterSubApp.instance.availableTracks.value.find { it.id == trackId }
+                    val track = controller.availableTracks.value.find { it.id == trackId }
                     if (track != null) {
-                        AlterSubApp.instance.selectTrack(track)
+                        controller.selectTrack(track)
                         jsonResponse(JSONObject().put("success", true))
                     } else {
                         jsonResponse(JSONObject().put("error", "Track not found"), Response.Status.NOT_FOUND)
@@ -92,7 +90,7 @@ class WebRemoteServer(
                 uri == "/api/search" && method == Method.POST -> {
                     val query = session.parms["q"] ?: ""
                     if (query.isNotBlank()) {
-                        AlterSubApp.instance.onContentDetected(ContentMetadata(title = query), DetectionSource.MANUAL)
+                        controller.onContentDetected(ContentMetadata(title = query), DetectionSource.MANUAL)
                     }
                     jsonResponse(JSONObject().put("success", true))
                 }
@@ -112,10 +110,9 @@ class WebRemoteServer(
     }
 
     private fun handleStatus(): Response {
-        val app = AlterSubApp.instance
-        val content = app.currentContent.value
-        val activeTrack = app.activeTrack.value
-        val tracks = app.availableTracks.value
+        val content = controller.currentContent.value
+        val activeTrack = controller.activeTrack.value
+        val tracks = controller.availableTracks.value
 
         val tracksArray = JSONArray()
         for (t in tracks) {
@@ -132,12 +129,12 @@ class WebRemoteServer(
             .put("title", content?.getDisplayName() ?: "")
             .put("activeTrack", activeTrack?.title ?: "")
             .put("activeTrackId", activeTrack?.id ?: "")
-            .put("offsetMs", app.clock.userOffsetMs.value)
-            .put("positionMs", app.clock.getPositionMs())
-            .put("isPlaying", app.clock.isPlaying.value)
-            .put("overlayRunning", app.overlayRunning.value)
-            .put("overlayError", app.overlayError.value ?: "")
-            .put("style", styleJson(app.subtitleStyle.value))
+            .put("offsetMs", controller.clock.userOffsetMs.value)
+            .put("positionMs", controller.clock.getPositionMs())
+            .put("isPlaying", controller.clock.isPlaying.value)
+            .put("overlayRunning", controller.overlayRunning.value)
+            .put("overlayError", controller.overlayError.value ?: "")
+            .put("style", styleJson(controller.subtitleStyle.value))
             .put("tracks", tracksArray)
 
         return jsonResponse(json)
@@ -155,10 +152,10 @@ class WebRemoteServer(
         val files = HashMap<String, String>()
         session.parseBody(files)
 
-        for ((key, tempPath) in files) {
+        for (tempPath in files.values) {
             val tempFile = File(tempPath)
             if (tempFile.exists()) {
-                val uploadDir = File(context.cacheDir, "uploads").apply { mkdirs() }
+                uploadDir.mkdirs()
                 val targetFile = File(uploadDir, "phone_upload_${System.currentTimeMillis()}.srt")
 
                 FileInputStream(tempFile).use { input ->
@@ -167,7 +164,7 @@ class WebRemoteServer(
                     }
                 }
 
-                AlterSubApp.instance.loadDirectSrt(targetFile, "Uploaded Subtitle")
+                controller.loadDirectSrt(targetFile, "Uploaded Subtitle")
                 return jsonResponse(JSONObject().put("success", true))
             }
         }
