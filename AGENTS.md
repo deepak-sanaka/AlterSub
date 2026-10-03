@@ -54,7 +54,7 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
 * **`core/model/`**: Data models (`ContentMetadata`, `SubtitleCue`, `SubtitleTrack`, `PlaybackStateInfo`).
 * **`core/clock/`**: [`SubtitleClock.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/core/clock/SubtitleClock.kt) — monotonic elapsed realtime timekeeper with $\pm\text{ms}$ user offset.
 * **`core/parser/`**:
-  * [`SrtParser.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/core/parser/SrtParser.kt) — zero-allocation UTF-8/BOM SRT timestamp parser.
+  * [`SrtParser.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/core/parser/SrtParser.kt) — single-pass UTF-8/BOM SRT parser with precompiled tag stripping (parses once per track; the per-frame zero-allocation rule applies to `SubtitleTextView.onDraw`).
   * [`SubtitleIndex.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/core/parser/SubtitleIndex.kt) — flat binary search index ($O(\log N)$) with smart sleep interval calculator.
 * **`detection/`**:
   * [`TitleSanitizer.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/detection/TitleSanitizer.kt) — regex cleaner for `SxxExx`, years, and UI junk filter.

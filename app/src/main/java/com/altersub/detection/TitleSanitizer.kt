@@ -8,6 +8,18 @@ object TitleSanitizer {
     private val standaloneEpisodePattern = Regex("(?i)(?:e|ep|episode)\\s*(\\d{1,3})")
     private val yearPattern = Regex("\\b(19\\d{2}|20\\d{2})\\b")
 
+    // Cleanup patterns are compiled once: sanitize() runs on every accessibility scan
+    private val parenYearPattern = Regex("\\(\\s*\\d{4}\\s*\\)")
+    private val bracketYearPattern = Regex("\\[\\s*\\d{4}\\s*\\]")
+    private val qualityTagPattern = Regex("(?i)[\\(\\[]?(?:4k|hdr|uhd|1080p|720p|h264|h265|bluray|web-?rip)[\\)\\]]?")
+    private val emptyBracketsPattern = Regex("[\\(\\[]\\s*[\\)\\]]")
+    private val trailingSeparatorPattern = Regex("[-_:|•]+$")
+
+    private val junkKeywords = hashSetOf(
+        "play", "pause", "resume", "episodes", "more info", "audio & subtitles",
+        "search", "settings", "next episode", "skip intro", "home", "back"
+    )
+
     /**
      * Sanitizes raw screen or media session text into structured ContentMetadata.
      */
@@ -44,12 +56,12 @@ object TitleSanitizer {
             cleanTitle = cleanTitle.substring(0, seMatch.range.first).trim()
         }
         cleanTitle = cleanTitle
-            .replace(Regex("\\(\\s*\\d{4}\\s*\\)"), "")
-            .replace(Regex("\\[\\s*\\d{4}\\s*\\]"), "")
+            .replace(parenYearPattern, "")
+            .replace(bracketYearPattern, "")
             .replace(yearPattern, "")
-            .replace(Regex("(?i)[\\(\\[]?(?:4k|hdr|uhd|1080p|720p|h264|h265|bluray|web-?rip)[\\)\\]]?"), "")
-            .replace(Regex("[\\(\\[]\\s*[\\)\\]]"), "")
-            .replace(Regex("[-_:|•]+$"), "")
+            .replace(qualityTagPattern, "")
+            .replace(emptyBracketsPattern, "")
+            .replace(trailingSeparatorPattern, "")
             .trim()
 
         if (cleanTitle.length < 2) return null
@@ -65,10 +77,6 @@ object TitleSanitizer {
 
     private fun isUiJunk(text: String): Boolean {
         val lower = text.lowercase()
-        val junkKeywords = listOf(
-            "play", "pause", "resume", "episodes", "more info", "audio & subtitles",
-            "search", "settings", "next episode", "skip intro", "home", "back"
-        )
         return junkKeywords.contains(lower) || lower.length > 120
     }
 }

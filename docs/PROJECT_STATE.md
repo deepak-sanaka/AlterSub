@@ -317,7 +317,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | KI-10 | Medium | Privacy / Distribution | Accessibility service watches every app and requests unused capabilities |
 | KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
 | KI-12 | Medium | Platform | Overlay foreground service never stops once started |
-| KI-14 | Low | Performance | Allocations in `onDraw` and per-line regex compilation in the parser |
 | KI-15 | Low | Parsing | UTF-8 only, overlapping cues, malformed SRT, partial VTT |
 | KI-16 | Low | Platform | Background foreground-service start may break when `targetSdk` is raised |
 | KI-17 | Low | UI | TV setup screen shows only 1 of 3 permission states; no subtitle style settings |
@@ -446,7 +445,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 
 | ID | Issue | Implication | Fix direction |
 | :--- | :--- | :--- | :--- |
-| KI-14 | `SubtitleTextView.onDraw` calls `split("\n")` on every draw; `SrtParser.cleanHtmlTags` compiles a new `Regex` for every text line. | Violates AGENTS.md Rule 2 and the "zero-allocation" claims. Minor GC pressure on 1GB devices (`onDraw` runs only on cue change). | Split once in `setSubtitle`; precompile the regex as a field. |
 | KI-15 | Parser reads UTF-8 only; overlapping cues aren't supported (binary search returns one; sleep ignores the next start inside an active cue); a missing blank line merges cues; VTT `mm:ss.mmm` timestamps are dropped. | Garbled accents in YTS or phone files; missing lines in SDH subtitles; some uploads silently show nothing. | Charset detection (BOM/heuristic, fall back to Windows-1252); an index that handles overlaps; a proper VTT timestamp path. |
 | KI-16 | The overlay foreground service is started from background contexts (detection callbacks, web server). That works today at `targetSdk 34`, presumably via the overlay-permission/bound-service exemptions. | Raising `targetSdk` to 35 tightens the overlay-permission exemption (a visible overlay window is required first), which could throw `ForegroundServiceStartNotAllowedException`. | Re-test background start when bumping `targetSdk`; keep the service alive rather than starting it on demand. |
 | KI-17 | `MainActivity` refreshes only the overlay permission status. `tvAccessibilityStatus`/`tvNotificationStatus` are never updated; reproduced on the TV emulator, where both rows still said "ENABLE" while enabled. `setTextSizeSp`/`setTextColor` exist but nothing calls them. | Users can't tell from the TV whether detection is enabled. Subtitle size and colour can't be customised. | Check enabled services in `onResume`; expose size, colour and position in the web remote. |
@@ -467,8 +465,9 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | 2026-10-03 | The MediaSession position was used as-is, even though it can be stale by seconds or minutes. | Extrapolated from `lastPositionUpdateTime` × speed; an unknown position only updates play/pause. |
 | 2026-10-03 | There was no way to set the clock position if the app publishes no position. | `POST /api/seek` + "Set time" field in the web remote; `positionMs` added to `/api/status`. |
 | 2026-10-03 | `SubtitleClock` was mutated from several threads without synchronization. | Mutators and readers are `@Synchronized`; the offset is updated atomically. |
-| 2026-10-03 | **KI-23**: `architecture-plan.pdf` was an outdated, image-only design plan describing unbuilt components, and its MediaProjection OCR strategy contradicted AGENTS.md Rule 1. | Deleted. This document and AGENTS.md are the design references; the PDF remains in git history (commit `bc1e546` and earlier). |
+| 2026-10-03 | **KI-23**: `architecture-plan.pdf` was an outdated, image-only design plan describing unbuilt components, and its MediaProjection OCR strategy contradicted AGENTS.md Rule 1. | Deleted, and later stripped from git history along with old build output. This document and AGENTS.md are the design references. |
 | 2026-10-03 | **KI-13**: the render loop slept at most 500ms (≥2 wakeups/s) and posted to the UI thread every tick. | Event-driven loop over `clock.changes` + the active index: sleeps exactly to the next cue boundary, never wakes while paused, and posts only when the text changes. |
+| 2026-10-03 | **KI-14**: `SubtitleTextView.onDraw` split the text on every draw; `SrtParser` and `TitleSanitizer` compiled regexes on every line/call. | Lines are split once in `setSubtitle` and drawn by index (no allocation in `onDraw`); all regexes and the UI-junk set are precompiled fields. |
 
 ---
 

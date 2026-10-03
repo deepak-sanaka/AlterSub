@@ -7,6 +7,8 @@ import java.io.InputStreamReader
 
 object SrtParser {
 
+    private val htmlTagPattern = Regex("<[^>]*>")
+
     /**
      * Parses an SRT InputStream into a sorted list of SubtitleCues.
      * Memory efficient and resilient against malformed/BOM headers.
@@ -101,6 +103,6 @@ object SrtParser {
     }
 
     private fun cleanHtmlTags(input: String): String {
-        return input.replace(Regex("<[^>]*>"), "")
+        return input.replace(htmlTagPattern, "")
     }
 }

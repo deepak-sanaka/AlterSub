@@ -22,6 +22,8 @@ class SubtitleTextView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
 
     private var subtitleText: String = ""
+    // Split once per subtitle change; onDraw iterates this by index so drawing allocates nothing (AGENTS.md Rule 2)
+    private var lines: Array<String> = emptyArray()
     private var baseTextSizePx: Float = 30f * resources.displayMetrics.scaledDensity
 
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -53,6 +55,7 @@ class SubtitleTextView @JvmOverloads constructor(
     fun setSubtitle(text: String) {
         if (subtitleText != text) {
             subtitleText = text
+            lines = if (text.isBlank()) emptyArray() else text.split('\n').toTypedArray()
             invalidate()
         }
     }
@@ -69,9 +72,8 @@ class SubtitleTextView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (subtitleText.isBlank()) return
+        if (lines.isEmpty()) return
 
-        val lines = subtitleText.split("\n")
         val viewWidth = width.toFloat()
         val viewHeight = height.toFloat()
         val centerX = viewWidth / 2f
@@ -81,8 +83,8 @@ class SubtitleTextView @JvmOverloads constructor(
         var maxLineWidth = 0f
         textPaint.textSize = baseTextSizePx
 
-        for (line in lines) {
-            val w = textPaint.measureText(line)
+        for (i in lines.indices) {
+            val w = textPaint.measureText(lines[i])
             if (w > maxLineWidth) maxLineWidth = w
         }
 
@@ -105,8 +107,8 @@ class SubtitleTextView @JvmOverloads constructor(
 
         // Measure scaled width for bounding box
         var scaledMaxWidth = 0f
-        for (line in lines) {
-            val w = textPaint.measureText(line)
+        for (i in lines.indices) {
+            val w = textPaint.measureText(lines[i])
             if (w > scaledMaxWidth) scaledMaxWidth = w
         }
 
