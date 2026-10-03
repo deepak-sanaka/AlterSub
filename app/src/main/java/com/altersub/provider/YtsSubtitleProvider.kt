@@ -12,7 +12,9 @@ import java.util.zip.ZipInputStream
 import kotlin.coroutines.cancellation.CancellationException
 
 class YtsSubtitleProvider(
-    private val client: OkHttpClient = Http.client
+    private val client: OkHttpClient = Http.client,
+    // Overridable so tests can point the provider at a local mock server
+    private val baseUrl: String = "https://yts-subs.com"
 ) : SubtitleProvider {
 
     override val name: String = "YTS Movie Subtitles"
@@ -26,7 +28,7 @@ class YtsSubtitleProvider(
 
         val tracks = mutableListOf<SubtitleTrack>()
         try {
-            val url = "https://yts-subs.com/api/v1/movie/${metadata.imdbId}"
+            val url = "$baseUrl/api/v1/movie/${metadata.imdbId}"
             val request = Request.Builder()
                 .url(url)
                 .header("User-Agent", "AlterSub/1.0")
@@ -56,7 +58,7 @@ class YtsSubtitleProvider(
                                         title = "${metadata.title} ($lang) [YTS]",
                                         language = lang,
                                         source = name,
-                                        downloadUrl = "https://yts-subs.com$subUrl",
+                                        downloadUrl = "$baseUrl$subUrl",
                                         format = "zip",
                                         isHearingImpaired = hi,
                                         rating = rating

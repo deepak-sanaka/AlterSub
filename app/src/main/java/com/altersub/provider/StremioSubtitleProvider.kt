@@ -11,7 +11,10 @@ import java.net.URLEncoder
 import kotlin.coroutines.cancellation.CancellationException
 
 class StremioSubtitleProvider(
-    private val client: OkHttpClient = Http.client
+    private val client: OkHttpClient = Http.client,
+    // Overridable so tests can point the provider at a local mock server
+    private val subtitlesBaseUrl: String = "https://opensubtitles-v3.strem.io",
+    private val catalogBaseUrl: String = "https://v3-cinemeta.strem.io"
 ) : SubtitleProvider {
 
     override val name: String = "Community OpenSubtitles"
@@ -34,9 +37,9 @@ class StremioSubtitleProvider(
             val endpoint = if (metadata.isEpisode) {
                 val s = metadata.season ?: 1
                 val e = metadata.episode ?: 1
-                "https://opensubtitles-v3.strem.io/subtitles/series/$imdbId:$s:$e.json"
+                "$subtitlesBaseUrl/subtitles/series/$imdbId:$s:$e.json"
             } else {
-                "https://opensubtitles-v3.strem.io/subtitles/movie/$imdbId.json"
+                "$subtitlesBaseUrl/subtitles/movie/$imdbId.json"
             }
 
             val request = Request.Builder()
@@ -113,7 +116,7 @@ class StremioSubtitleProvider(
         try {
             val type = if (metadata.isEpisode) "series" else "movie"
             val encodedQuery = URLEncoder.encode(metadata.title, "UTF-8")
-            val url = "https://v3-cinemeta.strem.io/catalog/$type/top/search=$encodedQuery.json"
+            val url = "$catalogBaseUrl/catalog/$type/top/search=$encodedQuery.json"
 
             val request = Request.Builder().url(url).build()
             client.newCall(request).await().use { response ->

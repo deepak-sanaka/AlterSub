@@ -15,7 +15,9 @@ import kotlin.coroutines.cancellation.CancellationException
 class OpenSubtitlesApiProvider(
     private var apiKey: String = "",
     private var authToken: String = "",
-    private val client: OkHttpClient = Http.client
+    private val client: OkHttpClient = Http.client,
+    // Overridable so tests can point the provider at a local mock server
+    private val baseUrl: String = "https://api.opensubtitles.com/api/v1"
 ) : SubtitleProvider {
 
     override val name: String = "Official OpenSubtitles.com"
@@ -45,7 +47,7 @@ class OpenSubtitlesApiProvider(
             }
 
             val request = Request.Builder()
-                .url("https://api.opensubtitles.com/api/v1/subtitles?$queryParams")
+                .url("$baseUrl/subtitles?$queryParams")
                 .header("Api-Key", apiKey)
                 .header("User-Agent", "AlterSub v1.0")
                 .apply {
@@ -108,7 +110,7 @@ class OpenSubtitlesApiProvider(
             val body = jsonPayload.toRequestBody("application/json".toMediaType())
 
             val req = Request.Builder()
-                .url("https://api.opensubtitles.com/api/v1/download")
+                .url("$baseUrl/download")
                 .header("Api-Key", apiKey)
                 .header("User-Agent", "AlterSub v1.0")
                 .apply {
