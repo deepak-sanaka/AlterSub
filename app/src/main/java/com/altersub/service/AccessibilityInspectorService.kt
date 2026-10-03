@@ -6,6 +6,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.altersub.AlterSubApp
 import com.altersub.detection.AppPackageFilter
+import com.altersub.detection.DetectionSource
 import com.altersub.detection.TitleSanitizer
 
 class AccessibilityInspectorService : AccessibilityService() {
@@ -17,6 +18,9 @@ class AccessibilityInspectorService : AccessibilityService() {
 
         val pkg = event.packageName?.toString() ?: return
         if (!AppPackageFilter.isTargetApp(pkg)) return
+
+        // A live media session or the user's own pick outranks anything scraped from the screen
+        if (!AlterSubApp.instance.acceptsScreenDetection) return
 
         // Throttle inspection to prevent CPU burden on slow hardware (max once every 1.5 seconds)
         val now = System.currentTimeMillis()
@@ -42,7 +46,7 @@ class AccessibilityInspectorService : AccessibilityService() {
             val metadata = TitleSanitizer.sanitize(candidate, pkg)
             if (metadata != null) {
                 Log.d("AccessibilityInspector", "Found media title: ${metadata.getDisplayName()}")
-                AlterSubApp.instance.onContentDetected(metadata)
+                AlterSubApp.instance.onContentDetected(metadata, DetectionSource.ACCESSIBILITY)
                 break
             }
         }

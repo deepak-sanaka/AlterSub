@@ -26,8 +26,9 @@ object WebRemoteHtml {
         .btn-play { background: #E50914; color: #FFF; border: none; grid-column: span 2; }
         
         .offset-display { text-align: center; font-size: 28px; font-weight: 700; color: #FFE500; margin: 12px 0; font-variant-numeric: tabular-nums; }
-        
-        .search-box { display: flex; gap: 8px; margin-top: 12px; }
+        .clock-display { text-align: center; font-size: 15px; color: #AAA; margin-top: 16px; font-variant-numeric: tabular-nums; }
+
+        .input-row { display: flex; gap: 8px; margin-top: 12px; }
         input[type="text"] { flex: 1; background: #2A2A2A; border: 1px solid #3A3A3A; color: #FFF; padding: 10px 12px; border-radius: 8px; font-size: 14px; outline: none; }
         input[type="file"] { display: none; }
         
@@ -61,11 +62,16 @@ object WebRemoteHtml {
             <button class="btn-play" onclick="togglePlay()" id="playPauseBtn">PLAY / PAUSE</button>
             <button onclick="adjustOffset(-offsetValue)" style="grid-column: span 2;">RESET TO 0</button>
         </div>
+        <div class="clock-display" id="clockText">Clock 0:00:00</div>
+        <div class="input-row">
+            <input type="text" id="seekInput" placeholder="Player time, e.g. 41:23">
+            <button class="btn-accent" onclick="seekClock()">Set time</button>
+        </div>
     </div>
 
     <div class="card">
         <h2 style="font-size:15px; color:#AAA;">MANUAL SEARCH & UPLOAD</h2>
-        <div class="search-box">
+        <div class="input-row">
             <input type="text" id="searchInput" placeholder="Search movie or series...">
             <button class="btn-accent" onclick="searchManual()">Search</button>
         </div>
@@ -101,7 +107,8 @@ object WebRemoteHtml {
                 
                 isPlaying = data.isPlaying;
                 document.getElementById('playPauseBtn').innerText = isPlaying ? "PAUSE CLOCK" : "START CLOCK";
-                
+                document.getElementById('clockText').innerText = "Clock " + formatTime(data.positionMs || 0) + (isPlaying ? " (running)" : " (paused)");
+
                 renderTracks(data.tracks || [], data.activeTrackId);
             } catch(e) {}
         }
@@ -125,6 +132,39 @@ object WebRemoteHtml {
 
         async function adjustOffset(delta) {
             await fetch('/api/offset?delta=' + delta, { method: 'POST' });
+            fetchStatus();
+        }
+
+        // Accepts "83", "41:23" or "1:05:10" (seconds may be fractional); returns ms or null
+        function parseTime(text) {
+            const parts = text.trim().split(':');
+            if (parts.length > 3) return null;
+            let seconds = 0;
+            for (const raw of parts) {
+                const part = raw.trim();
+                if (part === '' || isNaN(part) || Number(part) < 0) return null;
+                seconds = seconds * 60 + Number(part);
+            }
+            return Math.round(seconds * 1000);
+        }
+
+        function formatTime(ms) {
+            const total = Math.floor(ms / 1000);
+            const h = Math.floor(total / 3600);
+            const m = Math.floor((total % 3600) / 60);
+            const s = total % 60;
+            return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+        }
+
+        async function seekClock() {
+            const input = document.getElementById('seekInput');
+            const ms = parseTime(input.value);
+            if (ms === null) {
+                alert('Enter the time shown in the player, e.g. 41:23 or 1:05:10');
+                return;
+            }
+            await fetch('/api/seek?positionMs=' + ms, { method: 'POST' });
+            input.value = '';
             fetchStatus();
         }
 

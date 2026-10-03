@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.altersub.AlterSubApp
 import com.altersub.core.model.ContentMetadata
+import com.altersub.detection.DetectionSource
 import fi.iki.elonen.NanoHTTPD
 import org.json.JSONArray
 import org.json.JSONObject
@@ -41,6 +42,18 @@ class WebRemoteServer(
                     jsonResponse(JSONObject().put("success", true).put("offsetMs", AlterSubApp.instance.clock.userOffsetMs.value))
                 }
 
+                uri == "/api/seek" && method == Method.POST -> {
+                    // Lets the user line the clock up with the player's on-screen time when no MediaSession position is available
+                    val positionMs = session.parms["positionMs"]?.toLongOrNull()
+                    if (positionMs == null || positionMs < 0) {
+                        jsonResponse(JSONObject().put("error", "positionMs must be a non-negative number"), Response.Status.BAD_REQUEST)
+                    } else {
+                        val clock = AlterSubApp.instance.clock
+                        clock.seekTo(positionMs)
+                        jsonResponse(JSONObject().put("success", true).put("positionMs", clock.getPositionMs()))
+                    }
+                }
+
                 uri == "/api/toggle-play" && method == Method.POST -> {
                     val clock = AlterSubApp.instance.clock
                     if (clock.isPlaying.value) clock.pause() else clock.play()
@@ -51,7 +64,7 @@ class WebRemoteServer(
                     val trackId = session.parms["id"] ?: ""
                     val track = AlterSubApp.instance.availableTracks.value.find { it.id == trackId }
                     if (track != null) {
-                        AlterSubApp.instance.loadAndActivateTrack(track)
+                        AlterSubApp.instance.selectTrack(track)
                         jsonResponse(JSONObject().put("success", true))
                     } else {
                         jsonResponse(JSONObject().put("error", "Track not found"), Response.Status.NOT_FOUND)
@@ -61,7 +74,7 @@ class WebRemoteServer(
                 uri == "/api/search" && method == Method.POST -> {
                     val query = session.parms["q"] ?: ""
                     if (query.isNotBlank()) {
-                        AlterSubApp.instance.onContentDetected(ContentMetadata(title = query))
+                        AlterSubApp.instance.onContentDetected(ContentMetadata(title = query), DetectionSource.MANUAL)
                     }
                     jsonResponse(JSONObject().put("success", true))
                 }
@@ -102,6 +115,7 @@ class WebRemoteServer(
             .put("activeTrack", activeTrack?.title ?: "")
             .put("activeTrackId", activeTrack?.id ?: "")
             .put("offsetMs", app.clock.userOffsetMs.value)
+            .put("positionMs", app.clock.getPositionMs())
             .put("isPlaying", app.clock.isPlaying.value)
             .put("tracks", tracksArray)
 

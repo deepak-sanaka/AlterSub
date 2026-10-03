@@ -11,6 +11,9 @@ data class ContentMetadata(
 ) {
     val isEpisode: Boolean get() = season != null && episode != null
 
+    /** Identity used to decide whether two detections refer to the same title/episode. */
+    val contentKey: String get() = "${title.lowercase()}|${season ?: ""}|${episode ?: ""}"
+
     fun getDisplayName(): String {
         return if (isEpisode) {
             "$title S%02dE%02d".format(season, episode)

@@ -9,15 +9,19 @@ import com.altersub.core.model.ContentMetadata
 import com.altersub.core.model.SubtitleTrack
 import com.altersub.core.parser.SrtParser
 import com.altersub.core.parser.SubtitleIndex
+import com.altersub.detection.DetectionArbiter
+import com.altersub.detection.DetectionSource
 import com.altersub.provider.CompositeSubtitleProvider
 import com.altersub.server.WebRemoteServer
 import com.altersub.service.SubtitleOverlayService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileInputStream
@@ -42,6 +46,15 @@ class AlterSubApp : Application() {
 
     private var webRemoteServer: WebRemoteServer? = null
 
+    // Guards the arbiter, the jobs below, and every content/track state transition.
+    // Detections arrive concurrently from the main thread, web server threads and IO coroutines.
+    private val detectionLock = Any()
+    private val arbiter = DetectionArbiter()
+    private var searchJob: Job? = null
+    private var activationJob: Job? = null
+
+    val acceptsScreenDetection: Boolean get() = arbiter.acceptsScreenDetection
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -56,56 +69,91 @@ class AlterSubApp : Application() {
         }
     }
 
-    fun onContentDetected(metadata: ContentMetadata) {
-        val current = _currentContent.value
-        if (current?.title == metadata.title &&
-            current.season == metadata.season &&
-            current.episode == metadata.episode
-        ) {
-            return // Same content already loaded
-        }
+    fun onContentDetected(metadata: ContentMetadata, source: DetectionSource) {
+        synchronized(detectionLock) {
+            if (!arbiter.accept(metadata, source, _currentContent.value)) return
 
-        _currentContent.value = metadata
-        Log.i("AlterSubApp", "New content detected: ${metadata.getDisplayName()}")
+            searchJob?.cancel()
+            activationJob?.cancel()
 
-        // Launch background search across all providers
-        appScope.launch {
-            val tracks = compositeProvider.searchAll(metadata, "en")
-            _availableTracks.value = tracks
+            // Never leave the previous title's subtitles running over the new one
+            _currentContent.value = metadata
+            _availableTracks.value = emptyList()
+            _activeTrack.value = null
+            _subtitleIndex.value = null
+            Log.i("AlterSubApp", "New content detected via $source: ${metadata.getDisplayName()}")
 
-            if (tracks.isNotEmpty()) {
-                // Automatically activate top result
-                loadAndActivateTrack(tracks.first())
+            searchJob = appScope.launch {
+                val tracks = compositeProvider.searchAll(metadata, "en")
+
+                synchronized(detectionLock) {
+                    // Providers block on network I/O, so a newer detection may have replaced this one meanwhile
+                    if (!isActive || _currentContent.value !== metadata) return@launch
+
+                    // Uploads made while the search was running aren't in its results
+                    val merged = (compositeProvider.localTracksFor(metadata) + tracks).distinctBy { it.id }
+                    _availableTracks.value = merged
+
+                    val userAlreadyChose = _activeTrack.value != null || activationJob?.isActive == true
+                    if (!userAlreadyChose && merged.isNotEmpty()) {
+                        activateTrack(merged.first())
+                    }
+                }
             }
         }
     }
 
-    fun loadAndActivateTrack(track: SubtitleTrack) {
-        appScope.launch {
-            try {
-                val subDir = File(cacheDir, "subtitles")
-                val srtFile = compositeProvider.downloadTrack(track, subDir)
-                if (srtFile != null && srtFile.exists()) {
-                    FileInputStream(srtFile).use { input ->
-                        val cues = SrtParser.parse(input)
-                        val index = SubtitleIndex(cues)
-                        _subtitleIndex.value = index
-                        _activeTrack.value = track
-                        Log.i("AlterSubApp", "Activated track: ${track.title} with ${cues.size} cues")
+    fun onMediaSessionsEnded() {
+        synchronized(detectionLock) {
+            arbiter.onMediaSessionsEnded()
+        }
+        // The player is gone, so stop advancing subtitles over whatever is on screen now
+        clock.pause()
+    }
 
-                        // Ensure overlay service is running
-                        startOverlayService(this@AlterSubApp)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("AlterSubApp", "Error activating track: ${e.message}")
-            }
+    /** User picked a track on the phone remote. */
+    fun selectTrack(track: SubtitleTrack) {
+        synchronized(detectionLock) {
+            arbiter.onUserChoice()
+            activateTrack(track)
         }
     }
 
     fun loadDirectSrt(file: File, displayName: String) {
-        val track = compositeProvider.addLocalTrack(file, displayName)
-        loadAndActivateTrack(track)
+        synchronized(detectionLock) {
+            val track = compositeProvider.addLocalTrack(file, displayName, _currentContent.value)
+            _availableTracks.value = listOf(track) + _availableTracks.value
+            arbiter.onUserChoice()
+            activateTrack(track)
+        }
+    }
+
+    // Caller must hold detectionLock. Replaces any in-flight activation so a slow download can't win over a later choice.
+    private fun activateTrack(track: SubtitleTrack) {
+        activationJob?.cancel()
+        val content = _currentContent.value
+
+        activationJob = appScope.launch {
+            try {
+                val subDir = File(cacheDir, "subtitles")
+                val srtFile = compositeProvider.downloadTrack(track, subDir)
+                if (srtFile == null || !srtFile.exists()) return@launch
+
+                val cues = FileInputStream(srtFile).use { SrtParser.parse(it) }
+
+                synchronized(detectionLock) {
+                    if (!isActive || _currentContent.value !== content) return@launch
+                    _subtitleIndex.value = SubtitleIndex(cues)
+                    _activeTrack.value = track
+                }
+                Log.i("AlterSubApp", "Activated track: ${track.title} with ${cues.size} cues")
+
+                // Ensure overlay service is running
+                startOverlayService(this@AlterSubApp)
+            } catch (e: Exception) {
+                Log.e("AlterSubApp", "Error activating track: ${e.message}")
+            }
+        }
     }
 
     fun setTestSubtitleIndex(index: SubtitleIndex) {

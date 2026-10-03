@@ -12,10 +12,14 @@ class CompositeSubtitleProvider(
     val ytsProvider: YtsSubtitleProvider = YtsSubtitleProvider(),
     val openSubtitlesApiProvider: OpenSubtitlesApiProvider = OpenSubtitlesApiProvider()
 ) {
-    // In-memory list for tracks uploaded directly via Phone Web Remote
-    private val localUploadedTracks = mutableListOf<SubtitleTrack>()
+    // Tracks uploaded via Phone Web Remote, keyed by the content they were uploaded for
+    private val localUploadsByContent = HashMap<String, MutableList<SubtitleTrack>>()
 
-    fun addLocalTrack(file: File, displayName: String): SubtitleTrack {
+    /**
+     * Registers an uploaded file for [content]. With no content detected yet, the upload only
+     * plays now and is never offered for titles detected later.
+     */
+    fun addLocalTrack(file: File, displayName: String, content: ContentMetadata?): SubtitleTrack {
         val track = SubtitleTrack(
             id = "local-${System.currentTimeMillis()}",
             title = "$displayName [Phone Upload]",
@@ -24,15 +28,23 @@ class CompositeSubtitleProvider(
             downloadUrl = file.absolutePath,
             localFilePath = file.absolutePath
         )
-        localUploadedTracks.add(0, track)
+        if (content != null) {
+            synchronized(localUploadsByContent) {
+                localUploadsByContent.getOrPut(content.contentKey) { mutableListOf() }.add(0, track)
+            }
+        }
         return track
+    }
+
+    fun localTracksFor(content: ContentMetadata): List<SubtitleTrack> = synchronized(localUploadsByContent) {
+        localUploadsByContent[content.contentKey]?.toList().orEmpty()
     }
 
     suspend fun searchAll(metadata: ContentMetadata, language: String = "en"): List<SubtitleTrack> = coroutineScope {
         val results = mutableListOf<SubtitleTrack>()
 
-        // 1. Prepend any manually uploaded local tracks
-        results.addAll(localUploadedTracks)
+        // 1. Prepend tracks the user uploaded for this same content
+        results.addAll(localTracksFor(metadata))
 
         // 2. Query enabled online providers in parallel
         val deferredList = listOfNotNull(
@@ -46,7 +58,7 @@ class CompositeSubtitleProvider(
             results.addAll(list)
         }
 
-        // Deduplicate by title/language
+        // Deduplicate by track id
         return@coroutineScope results.distinctBy { it.id }
     }
 
