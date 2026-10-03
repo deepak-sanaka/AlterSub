@@ -6,6 +6,7 @@ import com.altersub.core.model.SubtitleTrack
 import com.altersub.detection.DetectionSource
 import com.altersub.provider.CompositeSubtitleProvider
 import com.altersub.provider.SubtitleProvider
+import com.altersub.provider.TitleResolver
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -42,7 +43,12 @@ class SubtitleSessionTest {
             pendingSearches.getOrPut(title) { CompletableDeferred() }
         }
 
-        override suspend fun search(metadata: ContentMetadata, language: String) = pending(metadata.title).await()
+        val searched = mutableListOf<ContentMetadata>()
+
+        override suspend fun search(metadata: ContentMetadata, language: String): List<SubtitleTrack> {
+            synchronized(searched) { searched += metadata }
+            return pending(metadata.title).await()
+        }
 
         // Each track's single cue shows its own id, so the active index is easy to identify
         override suspend fun download(track: SubtitleTrack, targetDir: File): File {
@@ -66,6 +72,17 @@ class SubtitleSessionTest {
         }
     }
 
+    // Catalog answers by title; empty unless a test sets them (then sessions behave as before title matching)
+    private val catalog = HashMap<String, List<TitleMatch>>()
+    private var catalogLookups = 0
+    private val resolver = TitleResolver { metadata ->
+        catalogLookups++
+        catalog[metadata.title.lowercase()].orEmpty()
+    }
+
+    private val sky2025 = TitleMatch("tt32543911", "Under the Open Sky", 2025)
+    private val sky2020 = TitleMatch("tt12801374", "Under the Open Sky", 2020)
+
     private fun TestScope.newSession(clock: SubtitleClock = this@SubtitleSessionTest.clock) = SubtitleSession(
         provider = CompositeSubtitleProvider(listOf(fake)),
         clock = clock,
@@ -73,6 +90,7 @@ class SubtitleSessionTest {
         scope = this,
         subtitleDir = File(tempDir.root, "subtitles"),
         picks = PickMemory(pickStore),
+        resolver = resolver,
         onTrackActivated = { overlayStarts++ }
     )
 
@@ -296,5 +314,99 @@ class SubtitleSessionTest {
         assertEquals("Inception", session.currentContent.value?.title)
         assertEquals("inception-1", session.shownText())
         assertFalse(session.restorePick("never seen||"))
+    }
+
+    @Test
+    fun testAnAmbiguousTypedTitleAsksAndUsesTheChosenFilm() = runTest {
+        catalog["under the open sky"] = listOf(sky2025, sky2020)
+        val session = newSession()
+
+        session.searchByText("Under the open sky")
+        advanceUntilIdle()
+
+        // Two films share the name: nothing is searched or loaded until the user picks one
+        assertEquals(SearchState.CHOOSE, session.searchState.value)
+        assertEquals(listOf(sky2025, sky2020), session.matches.value)
+        assertTrue(fake.searched.isEmpty())
+        assertNull(session.activeTrack.value)
+
+        assertTrue(session.chooseMatch(sky2020.imdbId))
+        advanceUntilIdle()
+        fake.respond("Under the Open Sky", "sky2020-eng")
+        advanceUntilIdle()
+
+        assertEquals("tt12801374", fake.searched.single().imdbId) // Providers get the chosen film's IMDb ID
+        assertEquals("Under the Open Sky (2020)", session.currentContent.value?.getDisplayName())
+        assertEquals("sky2020-eng", session.shownText())
+        assertEquals(SearchState.FOUND, session.searchState.value)
+        assertFalse(session.chooseMatch("tt0000000"))
+    }
+
+    @Test
+    fun testAYearInTheSearchPicksTheFilmWithoutAsking() = runTest {
+        catalog["under the open sky"] = listOf(sky2025, sky2020)
+        val session = newSession()
+
+        session.searchByText("Under the open sky 2020")
+        advanceUntilIdle()
+        fake.respond("Under the Open Sky", "sky2020-eng")
+        advanceUntilIdle()
+
+        assertEquals("tt12801374", fake.searched.single().imdbId)
+        assertEquals("sky2020-eng", session.activeTrack.value?.id)
+        // The other films stay listed, so a wrong guess can be corrected
+        assertEquals(listOf(sky2025, sky2020), session.matches.value)
+    }
+
+    @Test
+    fun testARememberedFilmIsNotAskedAboutAgain() = runTest {
+        catalog["under the open sky"] = listOf(sky2025, sky2020)
+        val first = newSession()
+        first.searchByText("Under the open sky")
+        advanceUntilIdle()
+        first.chooseMatch(sky2020.imdbId)
+        advanceUntilIdle()
+        fake.respond("Under the Open Sky", "sky2020-eng")
+        advanceUntilIdle()
+        val lookupsBefore = catalogLookups
+
+        val restarted = newSession(SubtitleClock())
+        restarted.searchByText("under the open sky")
+        advanceUntilIdle()
+
+        assertEquals(lookupsBefore, catalogLookups) // The remembered pick knows its IMDb ID
+        assertEquals(SearchState.FOUND, restarted.searchState.value)
+        assertEquals("tt12801374", restarted.currentContent.value?.imdbId)
+        assertEquals("sky2020-eng", restarted.shownText())
+    }
+
+    @Test
+    fun testAYearForAnotherFilmOverridesTheRememberedOne() = runTest {
+        catalog["under the open sky"] = listOf(sky2025, sky2020)
+        val session = newSession()
+        session.searchByText("Under the open sky 2020")
+        advanceUntilIdle()
+        fake.respond("Under the Open Sky", "sky-eng")
+        advanceUntilIdle()
+
+        session.searchByText("Under the open sky 2025")
+        advanceUntilIdle()
+
+        assertEquals("tt32543911", session.currentContent.value?.imdbId)
+        assertEquals("tt32543911", fake.searched.last().imdbId)
+    }
+
+    @Test
+    fun testASearchWithoutSubtitlesIsReported() = runTest {
+        catalog["inception"] = listOf(TitleMatch("tt1375666", "Inception", 2010))
+        val session = newSession()
+
+        session.searchByText("inception")
+        advanceUntilIdle()
+        fake.respond("Inception")
+        advanceUntilIdle()
+
+        assertEquals(SearchState.NOT_FOUND, session.searchState.value)
+        assertEquals("Inception (2010)", session.currentContent.value?.getDisplayName())
     }
 }

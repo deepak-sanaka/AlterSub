@@ -10,6 +10,7 @@ import com.altersub.core.parser.SubtitleIndex
 import com.altersub.detection.DetectionArbiter
 import com.altersub.detection.DetectionSource
 import com.altersub.provider.CompositeSubtitleProvider
+import com.altersub.provider.TitleResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,8 +23,21 @@ import java.io.FileInputStream
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.abs
 
+/** Where the current title's subtitle search stands, for the phone remote. */
+enum class SearchState {
+    IDLE,
+    SEARCHING,
+
+    /** Several films match the title; the user has to pick one of [SubtitleSession.matches]. */
+    CHOOSE,
+
+    /** The search finished without any subtitles. */
+    NOT_FOUND,
+    FOUND
+}
+
 /**
- * Coordinates what is playing → subtitle search → download → active track. Kept free of Android
+ * Coordinates what is playing → which film it is → subtitle search → download → active track. Kept free of Android
  * components (AlterSubApp owns one and delegates to it) so the race handling can be unit-tested.
  *
  * Every activated track is remembered in [picks] with its offset and progress: detecting or searching the
@@ -36,6 +50,7 @@ class SubtitleSession(
     private val scope: CoroutineScope,
     private val subtitleDir: File,
     private val picks: PickMemory,
+    private val resolver: TitleResolver = TitleResolver.NONE,
     private val onTrackActivated: () -> Unit
 ) {
 
@@ -51,6 +66,13 @@ class SubtitleSession(
     private val _subtitleIndex = MutableStateFlow<SubtitleIndex?>(null)
     val subtitleIndex: StateFlow<SubtitleIndex?> = _subtitleIndex.asStateFlow()
 
+    /** Films the current title could be, from the catalog: shown on the phone to choose or correct. */
+    private val _matches = MutableStateFlow<List<TitleMatch>>(emptyList())
+    val matches: StateFlow<List<TitleMatch>> = _matches.asStateFlow()
+
+    private val _searchState = MutableStateFlow(SearchState.IDLE)
+    val searchState: StateFlow<SearchState> = _searchState.asStateFlow()
+
     // Guards the arbiter, the jobs below, and every content/track state transition.
     // Detections arrive concurrently from the main thread, web server threads and IO coroutines.
     private val detectionLock = Any()
@@ -65,47 +87,126 @@ class SubtitleSession(
 
     val acceptsScreenDetection: Boolean get() = arbiter.acceptsScreenDetection
 
-    fun onContentDetected(metadata: ContentMetadata, source: DetectionSource) {
+    fun onContentDetected(metadata: ContentMetadata, source: DetectionSource) = detect(metadata, source, rawQuery = null)
+
+    /**
+     * A search typed on the phone, optionally with a year ("Under the Open Sky 2020"). Unlike automatic
+     * detections, an ambiguous title stops and asks the user (see [matches] and [chooseMatch]).
+     */
+    fun searchByText(query: String) {
+        val parsed = ManualQuery.parse(query)
+        if (parsed.title.isBlank()) return
+        detect(ContentMetadata(title = parsed.title, year = parsed.year), DetectionSource.MANUAL, rawQuery = parsed.raw)
+    }
+
+    /** The user picked which film they meant, from [matches]. Returns false if it isn't one of them. */
+    fun chooseMatch(imdbId: String): Boolean {
         synchronized(detectionLock) {
-            if (!arbiter.accept(metadata, source, _currentContent.value)) return
+            val match = _matches.value.firstOrNull { it.imdbId == imdbId } ?: return false
+            val base = _currentContent.value ?: return false
+            searchJob?.cancel()
+            activationJob?.cancel()
+            saveCurrentProgress()
+            arbiter.onUserChoice()
+            rememberPicks = true
+
+            val target = base.copy(title = match.name, year = match.year ?: base.year, imdbId = match.imdbId)
+            _currentContent.value = target
+            _availableTracks.value = emptyList()
+            _activeTrack.value = null
+            _subtitleIndex.value = null
+            clock.setOffset(trackOffsets.switchTo(null, clock.userOffsetMs.value))
+            _searchState.value = SearchState.SEARCHING
+            searchJob = scope.launch { searchSubtitles(target, remembered = null) }
+            return true
+        }
+    }
+
+    private fun detect(detected: ContentMetadata, source: DetectionSource, rawQuery: String?) {
+        synchronized(detectionLock) {
+            if (!arbiter.accept(detected, source, _currentContent.value)) return
 
             searchJob?.cancel()
             activationJob?.cancel()
             saveCurrentProgress()
+
+            // Seen before: the remembered pick already knows which film this is, and its track and offset.
+            // Unless the year or ID given now says it's a different film of the same name.
+            val remembered = picks.forContent(detected.contentKey)?.takeIf { pick ->
+                (detected.year == null || pick.content.year == null || pick.content.year == detected.year) &&
+                    (detected.imdbId == null || pick.content.imdbId == detected.imdbId)
+            }
+            val metadata = remembered?.content?.copy(sourcePackage = detected.sourcePackage) ?: detected
 
             // Never leave the previous title's subtitles (or its sync offset) running over the new one
             _currentContent.value = metadata
             _availableTracks.value = emptyList()
             _activeTrack.value = null
             _subtitleIndex.value = null
+            _matches.value = emptyList()
+            _searchState.value = SearchState.SEARCHING
             clock.setOffset(trackOffsets.switchTo(null, clock.userOffsetMs.value))
             Log.i(TAG, "New content detected via $source: ${metadata.getDisplayName()}")
             rememberPicks = source != DetectionSource.ACCESSIBILITY
 
-            // Seen before: bring back the same track and offset straight away instead of the search's first hit
-            val remembered = picks.forContent(metadata.contentKey)
             if (remembered != null) {
                 _availableTracks.value = listOf(remembered.track)
                 activateTrack(remembered.track, remembered.offsetMs)
             }
 
+            val interactive = source == DetectionSource.MANUAL && rawQuery != null
             searchJob = scope.launch {
-                val tracks = provider.searchAll(metadata, "en")
+                val target = identify(metadata, interactive, rawQuery) ?: return@launch
+                searchSubtitles(target, remembered?.track)
+            }
+        }
+    }
 
-                synchronized(detectionLock) {
-                    // Providers wait on the network, so a newer detection may have replaced this one meanwhile
-                    if (!isActive || _currentContent.value !== metadata) return@launch
+    /**
+     * Works out which film [metadata] is (so providers get its IMDb ID and the wrong same-named film is never
+     * used). Returns null when the user has to choose, or when a newer detection replaced this one.
+     */
+    private suspend fun identify(metadata: ContentMetadata, interactive: Boolean, rawQuery: String?): ContentMetadata? {
+        if (metadata.imdbId != null) return metadata
+        val candidates = resolver.find(metadata)
 
-                    // Uploads made while the search was running aren't in its results
-                    val merged = (listOfNotNull(remembered?.track) + provider.localTracksFor(metadata) + tracks)
-                        .distinctBy { it.id }
-                    _availableTracks.value = merged
-
-                    val userAlreadyChose = _activeTrack.value != null || activationJob?.isActive == true
-                    if (!userAlreadyChose && merged.isNotEmpty()) {
-                        activateTrack(merged.first())
-                    }
+        synchronized(detectionLock) {
+            if (_currentContent.value !== metadata) return null
+            _matches.value = TitleMatching.options(metadata, candidates)
+            return when (val decision = TitleMatching.decide(metadata, candidates, interactive, rawQuery)) {
+                is TitleMatching.Decision.Chosen -> {
+                    val match = decision.match
+                    metadata.copy(title = match.name, year = match.year ?: metadata.year, imdbId = match.imdbId)
+                        .also { _currentContent.value = it }
                 }
+
+                is TitleMatching.Decision.Ambiguous -> {
+                    _matches.value = decision.options
+                    _searchState.value = SearchState.CHOOSE
+                    null
+                }
+
+                // Unknown to the catalog: providers may still find it by title
+                TitleMatching.Decision.NoMatch -> metadata
+            }
+        }
+    }
+
+    private suspend fun searchSubtitles(target: ContentMetadata, remembered: SubtitleTrack?) {
+        val tracks = provider.searchAll(target, "en")
+
+        synchronized(detectionLock) {
+            // Providers wait on the network, so a newer detection may have replaced this one meanwhile
+            if (_currentContent.value !== target) return
+
+            // Uploads made while the search was running aren't in its results
+            val merged = (listOfNotNull(remembered) + provider.localTracksFor(target) + tracks).distinctBy { it.id }
+            _availableTracks.value = merged
+            _searchState.value = if (merged.isEmpty()) SearchState.NOT_FOUND else SearchState.FOUND
+
+            val userAlreadyChose = _activeTrack.value != null || activationJob?.isActive == true
+            if (!userAlreadyChose && merged.isNotEmpty()) {
+                activateTrack(merged.first())
             }
         }
     }
@@ -171,6 +272,8 @@ class SubtitleSession(
         _availableTracks.value = listOf(pick.track)
         _activeTrack.value = null
         _subtitleIndex.value = null
+        _matches.value = emptyList()
+        _searchState.value = SearchState.FOUND
         clock.setOffset(trackOffsets.switchTo(null, clock.userOffsetMs.value))
         activateTrack(pick.track, pick.offsetMs)
     }
@@ -221,12 +324,15 @@ class SubtitleSession(
                 val cues = FileInputStream(srtFile).use { SrtParser.parse(it) }
 
                 synchronized(detectionLock) {
-                    if (!isActive || _currentContent.value !== content) return@launch
+                    // Same title still wanted? (Identifying the film swaps in an enriched object for the same title)
+                    if (!isActive || _currentContent.value?.contentKey != content?.contentKey) return@launch
                     clock.setOffset(trackOffsets.switchTo(track.id, clock.userOffsetMs.value))
                     _subtitleIndex.value = SubtitleIndex(cues)
                     _activeTrack.value = track
-                    if (content != null && rememberPicks) {
-                        picks.remember(content, track, clock.userOffsetMs.value, clock.getPositionMs(), appPackage = null)
+                    // The current object, which by now may carry the identified film's IMDb ID and year
+                    val current = _currentContent.value
+                    if (current != null && rememberPicks) {
+                        picks.remember(current, track, clock.userOffsetMs.value, clock.getPositionMs(), appPackage = null)
                     }
                 }
                 Log.i(TAG, "Activated track: ${track.title} with ${cues.size} cues")

@@ -38,6 +38,7 @@ AlterSub/
 │   │   │   │   │   │   └── SubtitleIndex.kt         # Binary search index (overlap-aware) + next-boundary calculator
 │   │   │   │   │   └── session/
 │   │   │   │   │       ├── PickMemory.kt            # Remembered picks: track, offset, progress and app per title (persisted)
+│   │   │   │   │       ├── TitleMatching.kt         # Which film a title means: year parsing, same-name films, ask vs. guess
 │   │   │   │   │       └── SubtitleSession.kt       # Detection → search → download → active track (race-safe, JVM-testable)
 │   │   │   │   ├── detection/
 │   │   │   │   │   ├── AppPackageFilter.kt          # Target streaming apps (Netflix, Prime, Disney+, etc.)
@@ -166,12 +167,20 @@ AlterSub/
   * The phone page lists recent picks (`recent` in `/api/status`) for one-tap restore (`POST /api/restore?key=`).
 
 ### 3.4 Multi-Source Subtitle Sourcing (`CompositeSubtitleProvider`)
+**Identifying the film first** (`SubtitleSession` + `CinemetaTitleResolver` + `TitleMatching`): before any subtitle search, the title is looked up in Stremio's Cinemeta catalog, because several films can share a name and the catalog doesn't list the wanted one first. Found on a real TV: "Under the Open Sky" resolved to a 2025 film with no subtitles instead of the 2020 film being watched.
+* One film with that exact name → it is used, and its IMDb ID and year are passed to every provider.
+* Several (remakes, same-name films) → a search typed on the phone stops and the phone asks which one (`searchState: choose`, `matches`); automatic detections take the best guess and the phone offers the others under "Not the right film?".
+* A year in the typed search ("Under the Open Sky 2020", "(2020)") picks directly; a title ending in a number ("Wonder Woman 1984") is matched as typed first. Future years and bare numbers ("2012", "Blade Runner 2049") are treated as title text.
+* No exact name (partial title or typo) → the phone offers the top matches. Nothing in the catalog → providers search by title as before.
+* No subtitles for the chosen film → `searchState: not_found`, and the phone offers the other matches or an upload.
+* A remembered pick already knows its film, so the question isn't asked again, unless the typed year names a different film.
+
 Searches all sources concurrently using Kotlin coroutines `async { ... }`. All providers share one `OkHttpClient` (`Http.client`) and use `Call.await()`, so cancelling a superseded search also cancels its in-flight HTTP requests. Every response is closed with `use { }`.
 > ⚠️ In the current build **only the Stremio source can return results** in the automatic flow (KI-2).
 
 1. **Stremio Community Mirror (`StremioSubtitleProvider`)**:
    * Queries `https://opensubtitles-v3.strem.io/subtitles/{type}/{imdb_id}.json`.
-   * If IMDb ID is missing, auto-resolves via `https://v3-cinemeta.strem.io/catalog/...` (first search hit wins). The resolved ID is not written back to `ContentMetadata`.
+   * Normally receives the IMDb ID from the identification step above. Only if that found nothing does it fall back to its own Cinemeta lookup (first hit).
    * No API key or registration. This is a public third-party service with no published usage guarantees.
    * The download URLs return UTF-8-converted files (`subencoding-stremio-utf8`).
 2. **YTS Mirror (`YtsSubtitleProvider`)**:
@@ -206,7 +215,8 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
   * `POST /api/style?sizeStep=<±n>&positionStep=<±n>&color=<name>` (or `reset=1`): Adjusts subtitle size, vertical position and colour; values are clamped server-side.
   * `POST /api/toggle-play`: Manually forces clock play/pause.
   * `POST /api/select-track?id=<id>`: Switches active subtitle track with 1 tap.
-  * `POST /api/search?q=<query>`: Triggers manual search for any title.
+  * `POST /api/search?q=<query>`: Searches a typed title, optionally ending in a year.
+  * `POST /api/choose?imdbId=<id>`: The film the user meant, from `matches` in `/api/status` (with `searchState`: `searching`, `choose`, `not_found`, `found`, `idle`).
   * `POST /api/upload`: Receives multipart `.srt` file upload from phone.
 
 ---
@@ -229,7 +239,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
 
 ### 5.1 Automated Unit Tests
 * **Test Runner**: Gradle JUnit 4 on the JVM, with the real `org.json` artifact on the test classpath (Android's stub would throw).
-* **Status (2026-10-03)**: 102 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
+* **Status (2026-10-03)**: 120 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
 * **Test Suites**:
   * [`DetectionArbiterTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/DetectionArbiterTest.kt): MediaSession outranks scraping; a manual choice holds until the session title changes; scraping resumes after sessions end. (Passes)
   * [`SubtitleClockTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/clock/SubtitleClockTest.kt): MediaSession position extrapolation (elapsed time × speed, paused, missing/future snapshot, zero speed). (Passes)
@@ -400,7 +410,7 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 | :--- | :--- | :--- | :--- |
 | KI-1 | High | Verification | Only partly verified on a real TV (Netflix + Hotstar on one low-RAM TV) |
 | KI-26 | High | Detection | Netflix publishes no title anywhere, so it can never be detected automatically |
-| KI-2 | High | Sourcing | Only the Stremio source can return results; YTS and official API unreachable |
+| KI-2 | High | Sourcing | Only the Stremio source returns results in practice; the official API has no key entry |
 | KI-3 | High | Detection | App package filter matches the TV launcher, Settings, and other non-streaming apps |
 | KI-4 | High | Detection | `TitleSanitizer` turns sequels into episodes and misreads numbers as years |
 | KI-5 | High | Detection | Accessibility takes the first surviving text node as the title |
@@ -430,13 +440,12 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 #### KI-2 · Only one subtitle source actually works — *Confirmed*
 * **Where**: `YtsSubtitleProvider.search` (requires `imdbId`), `OpenSubtitlesApiProvider.isEnabled` (requires an API key), `StremioSubtitleProvider.resolveImdbId`.
 * **Issue**:
-  * Detection never sets `ContentMetadata.imdbId`. Stremio resolves an IMDb ID through Cinemeta but keeps it private, so YTS always returns nothing.
+  * The film is now identified once and its IMDb ID passed to every provider (§3.4), so YTS can be queried; it hasn't been verified to return results yet.
   * `OpenSubtitlesApiProvider.updateCredentials()` is never called and there is no UI to enter a key, so the official API is never enabled.
 * **Implication**:
   * Every automatic search depends on two public Stremio endpoints (`opensubtitles-v3.strem.io`, `v3-cinemeta.strem.io`). If they are down, rate-limited or change format, no subtitles are found and there is no fallback.
   * The "multi-source" resilience described in §3.4 and §4 does not exist yet.
-  * Cinemeta's first search hit is used unconditionally, so ambiguous titles can resolve to the wrong film.
-* **Fix direction**: Resolve the IMDb ID once (in the composite or a resolver) and pass it to all providers. Add API-key entry, e.g. a web remote settings card persisted to `SharedPreferences`. Consider year-aware candidate selection.
+* **Fix direction**: Verify YTS now that it gets IMDb IDs. Add API-key entry, e.g. a web remote settings card persisted to `SharedPreferences`.
 
 #### KI-3 · Package filter is far too broad — *Confirmed (reproduced on the Android TV 9 emulator)*
 * **Observed**: Pressing HOME let the accessibility service scrape `com.google.android.tvlauncher`. Within ~1s it detected the launcher's "CUSTOMIZE CHANNELS" button as a title, searched for it, and activated 2,007 cues of an unrelated film over the home screen (§5.2).
@@ -537,7 +546,7 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 ## 8. Current Project State & Next Steps
 
 * **Current Status**: Prototype / alpha.
-  * **Works today**: builds and 102 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload (named after the file), track selection, per-track offset, "Set time", subtitle style, and remembered picks restored after restarts or from a one-tap Recent list.
+  * **Works today**: builds and 120 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload (named after the file), track selection, per-track offset, "Set time", subtitle style, remembered picks restored after restarts or from a one-tap Recent list, and a "which film?" choice when several films share the searched title (or a year in the search).
   * **Open issues**: High and Medium only (§7.1). Most importantly, automatic detection and sync against real streaming apps on a physical TV is unproven (KI-1), and on the emulator accessibility auto-detection fired on the TV launcher's UI text (KI-3).
 * **Artifact Location**: release `app/build/outputs/apk/release/app-release-unsigned.apk` (~1.7 MB, R8-shrunk; needs a release signing config before distribution), debug `app/build/outputs/apk/debug/app-debug.apk` (~9.7 MB from a clean build, unshrunk; incremental debug builds leave dead space and can be much larger).
 * **Recommended Next Steps** (in order):

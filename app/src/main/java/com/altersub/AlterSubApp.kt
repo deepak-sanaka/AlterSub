@@ -10,8 +10,11 @@ import com.altersub.core.model.SubtitleStyle
 import com.altersub.core.model.SubtitleTrack
 import com.altersub.core.parser.SubtitleIndex
 import com.altersub.core.session.PickMemory
+import com.altersub.core.session.SearchState
+import com.altersub.core.session.TitleMatch
 import com.altersub.core.session.SubtitleSession
 import com.altersub.detection.DetectionSource
+import com.altersub.provider.CinemetaTitleResolver
 import com.altersub.provider.CompositeSubtitleProvider
 import com.altersub.server.RemoteAuth
 import com.altersub.server.RemoteController
@@ -44,7 +47,7 @@ class AlterSubApp : Application(), RemoteController {
     }
 
     private val session by lazy {
-        SubtitleSession(compositeProvider, clock, appScope, File(cacheDir, "subtitles"), pickMemory) {
+        SubtitleSession(compositeProvider, clock, appScope, File(cacheDir, "subtitles"), pickMemory, CinemetaTitleResolver()) {
             startOverlayService(this)
         }
     }
@@ -175,8 +178,15 @@ class AlterSubApp : Application(), RemoteController {
         }
     }
 
-    override fun onContentDetected(metadata: ContentMetadata, source: DetectionSource) =
+    fun onContentDetected(metadata: ContentMetadata, source: DetectionSource) =
         session.onContentDetected(metadata, source)
+
+    override val matches: StateFlow<List<TitleMatch>> get() = session.matches
+    override val searchState: StateFlow<SearchState> get() = session.searchState
+
+    override fun searchByText(query: String) = session.searchByText(query)
+
+    override fun chooseMatch(imdbId: String): Boolean = session.chooseMatch(imdbId)
 
     fun onMediaSessionsEnded() = session.onMediaSessionsEnded()
 

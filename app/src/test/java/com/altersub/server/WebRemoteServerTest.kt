@@ -5,7 +5,8 @@ import com.altersub.core.model.ContentMetadata
 import com.altersub.core.model.SubtitleStyle
 import com.altersub.core.model.SubtitleTrack
 import com.altersub.core.session.PickMemory
-import com.altersub.detection.DetectionSource
+import com.altersub.core.session.SearchState
+import com.altersub.core.session.TitleMatch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import okhttp3.MediaType.Companion.toMediaType
@@ -41,7 +42,10 @@ class WebRemoteServerTest {
         override val overlayError = MutableStateFlow<String?>(null)
         override val subtitleStyle = MutableStateFlow(SubtitleStyle())
 
-        val detections = mutableListOf<Pair<ContentMetadata, DetectionSource>>()
+        val searches = mutableListOf<String>()
+        val chosen = mutableListOf<String>()
+        override val matches = MutableStateFlow<List<TitleMatch>>(emptyList())
+        override val searchState = MutableStateFlow(SearchState.IDLE)
         val selectedTracks = mutableListOf<SubtitleTrack>()
         val uploads = mutableListOf<File>()
         val uploadNames = mutableListOf<String>()
@@ -49,8 +53,14 @@ class WebRemoteServerTest {
         var syncAdjustments = 0
         var picks = emptyList<PickMemory.Pick>()
 
-        override fun onContentDetected(metadata: ContentMetadata, source: DetectionSource) {
-            detections += metadata to source
+        override fun searchByText(query: String) {
+            searches += query
+        }
+
+        override fun chooseMatch(imdbId: String): Boolean {
+            if (matches.value.none { it.imdbId == imdbId }) return false
+            chosen += imdbId
+            return true
         }
 
         override fun selectTrack(track: SubtitleTrack) {
@@ -192,13 +202,29 @@ class WebRemoteServerTest {
     }
 
     @Test
-    fun testSearchIsAManualDetection() {
-        post("/api/search?q=Interstellar").close()
+    fun testSearchPassesTheTypedText() {
+        post("/api/search?q=Under%20the%20open%20sky%202020").close()
         post("/api/search?q=%20%20").close() // Blank queries are ignored
 
-        val (metadata, source) = controller.detections.single()
-        assertEquals("Interstellar", metadata.title)
-        assertEquals(DetectionSource.MANUAL, source)
+        assertEquals(listOf("Under the open sky 2020"), controller.searches)
+    }
+
+    @Test
+    fun testAmbiguousTitlesOfferMatchesToChooseFrom() {
+        controller.searchState.value = SearchState.CHOOSE
+        controller.matches.value = listOf(
+            TitleMatch("tt32543911", "Under the Open Sky", 2025),
+            TitleMatch("tt12801374", "Under the Open Sky", 2020)
+        )
+
+        val status = get("/api/status").json()
+        assertEquals("choose", status.getString("searchState"))
+        val matches = status.getJSONArray("matches")
+        assertEquals("Under the Open Sky (2020)", matches.getJSONObject(1).getString("title"))
+
+        post("/api/choose?imdbId=tt12801374").use { assertEquals(200, it.code) }
+        assertEquals(listOf("tt12801374"), controller.chosen)
+        post("/api/choose?imdbId=tt0000000").use { assertEquals(404, it.code) }
     }
 
     private fun upload(srt: String, token: String?) = http.newCall(
@@ -232,7 +258,7 @@ class WebRemoteServerTest {
     fun testUnknownRoutesAndWrongMethodsAre404() {
         get("/api/nope").use { assertEquals(404, it.code) }
         get("/api/offset?delta=100").use { assertEquals(404, it.code) } // Mutations require POST
-        assertNull(controller.detections.firstOrNull())
+        assertTrue(controller.searches.isEmpty())
         assertEquals(0L, controller.clock.userOffsetMs.value)
     }
 
@@ -244,7 +270,7 @@ class WebRemoteServerTest {
         post("/api/toggle-play", token = null).use { assertEquals(401, it.code) }
 
         assertEquals(0L, controller.clock.userOffsetMs.value)
-        assertTrue(controller.detections.isEmpty())
+        assertTrue(controller.searches.isEmpty())
         assertFalse(controller.clock.isPlaying.value)
     }
 

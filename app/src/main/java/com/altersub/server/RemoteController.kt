@@ -5,7 +5,8 @@ import com.altersub.core.model.ContentMetadata
 import com.altersub.core.model.SubtitleStyle
 import com.altersub.core.model.SubtitleTrack
 import com.altersub.core.session.PickMemory
-import com.altersub.detection.DetectionSource
+import com.altersub.core.session.SearchState
+import com.altersub.core.session.TitleMatch
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 
@@ -22,7 +23,15 @@ interface RemoteController {
     val overlayError: StateFlow<String?>
     val subtitleStyle: StateFlow<SubtitleStyle>
 
-    fun onContentDetected(metadata: ContentMetadata, source: DetectionSource)
+    /** Films the current title could be (to choose when ambiguous, or to correct a wrong guess). */
+    val matches: StateFlow<List<TitleMatch>>
+    val searchState: StateFlow<SearchState>
+
+    /** A search typed on the phone, optionally ending in a year. */
+    fun searchByText(query: String)
+
+    /** The user picked which film they meant from [matches]; false if it isn't one of them. */
+    fun chooseMatch(imdbId: String): Boolean
     fun selectTrack(track: SubtitleTrack)
     fun loadDirectSrt(file: File, displayName: String)
     fun updateSubtitleStyle(change: (SubtitleStyle) -> SubtitleStyle)

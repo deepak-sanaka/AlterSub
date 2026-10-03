@@ -1,9 +1,7 @@
 package com.altersub.server
 
 import android.util.Log
-import com.altersub.core.model.ContentMetadata
 import com.altersub.core.model.SubtitleStyle
-import com.altersub.detection.DetectionSource
 import fi.iki.elonen.NanoHTTPD
 import java.io.ByteArrayInputStream
 import org.json.JSONArray
@@ -122,10 +120,17 @@ class WebRemoteServer(
 
                 uri == "/api/search" && method == Method.POST -> {
                     val query = session.parms["q"] ?: ""
-                    if (query.isNotBlank()) {
-                        controller.onContentDetected(ContentMetadata(title = query), DetectionSource.MANUAL)
-                    }
+                    if (query.isNotBlank()) controller.searchByText(query)
                     jsonResponse(JSONObject().put("success", true))
+                }
+
+                // Which film the user meant, when several share the title
+                uri == "/api/choose" && method == Method.POST -> {
+                    if (controller.chooseMatch(session.parms["imdbId"] ?: "")) {
+                        jsonResponse(JSONObject().put("success", true))
+                    } else {
+                        jsonResponse(JSONObject().put("error", "Not one of the matches"), Response.Status.NOT_FOUND)
+                    }
                 }
 
                 uri == "/api/restore" && method == Method.POST -> {
@@ -216,6 +221,13 @@ class WebRemoteServer(
             .put("style", styleJson(controller.subtitleStyle.value))
             .put("tracks", tracksArray)
             .put("recent", recentJson(content?.contentKey))
+            .put("searchState", controller.searchState.value.name.lowercase())
+            .put("imdbId", content?.imdbId ?: "")
+            .put("matches", JSONArray().apply {
+                for (match in controller.matches.value) {
+                    put(JSONObject().put("imdbId", match.imdbId).put("title", match.displayName))
+                }
+            })
 
         return jsonResponse(json)
     }

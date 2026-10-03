@@ -103,6 +103,8 @@ object WebRemoteHtml {
     .empty { padding: 14px; color: var(--muted); font-size: 13px; text-align: center; }
     .recent-icon { flex: none; width: 18px; color: var(--accent); font-size: 17px; text-align: center; }
     .subhead { margin: 16px 0 0; color: var(--muted); font-size: 12px; font-weight: 500; }
+    .notice { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 13px; overflow-wrap: anywhere; }
+    .match-icon { flex: none; width: 18px; color: var(--muted); font-size: 15px; text-align: center; }
     .upload { width: 100%; margin-top: 10px; border-style: dashed; color: var(--muted); }
 
     .setting { display: flex; align-items: center; gap: 10px; }
@@ -176,12 +178,13 @@ object WebRemoteHtml {
                 <input type="text" id="searchInput" enterkeyhint="search" placeholder="Search a movie or show" aria-label="Search">
                 <button class="primary" type="submit">Search</button>
             </form>
+            <div id="matchBox" hidden></div>
             <div id="recentBox" hidden>
                 <div class="subhead">Recent: tap to load again with its timing</div>
                 <div class="tracks" id="recentList"></div>
             </div>
             <div class="tracks" id="trackList">
-                <div class="empty">No subtitles yet. Search for the movie or show above.</div>
+                <div class="empty">No subtitles yet. Search for the movie or show above. Add the year to pick between films with the same name.</div>
             </div>
             <label for="fileUpload" class="button upload">Upload an .srt file from this phone</label>
             <input type="file" id="fileUpload" accept=".srt,.vtt" onchange="uploadFile(this)">
@@ -340,7 +343,8 @@ object WebRemoteHtml {
 
         renderStyle(data.style);
         renderRecent(data.recent || []);
-        renderTracks(data.tracks || [], data.activeTrackId);
+        renderMatches(data);
+        renderTracks(data.tracks || [], data.activeTrackId, data.searchState);
     }
 
     function textElement(tag, className, text) {
@@ -352,14 +356,19 @@ object WebRemoteHtml {
 
     // Track fields come from uploaders' release names, search queries and scraped screen text, so they are
     // only ever set as text (never parsed as HTML), and each click handler holds its track id directly
-    function renderTracks(tracks, activeId) {
-        const key = JSON.stringify([tracks, activeId]);
+    function renderTracks(tracks, activeId, state) {
+        const key = JSON.stringify([tracks, activeId, state]);
         if (key === lastTracksKey) return; // Unchanged: don't rebuild the list every poll
         lastTracksKey = key;
 
         if (tracks.length === 0) {
-            const searching = Date.now() - searchStartedAt < 20000;
-            showTrackMessage(searching ? 'Searching…' : 'No subtitles yet. Search for the movie or show above.');
+            const list = document.getElementById('trackList');
+            if (state === 'choose' || state === 'not_found') {
+                list.textContent = ''; // The match box above explains what to do
+            } else {
+                const searching = state === 'searching' || Date.now() - searchStartedAt < 3000;
+                showTrackMessage(searching ? 'Searching\u2026' : 'No subtitles yet. Search for the movie or show above.');
+            }
             return;
         }
         const list = document.getElementById('trackList');
@@ -377,6 +386,69 @@ object WebRemoteHtml {
             item.append(textElement('span', 'radio', ''), text);
             list.appendChild(item);
         }
+    }
+
+    // Several films can share a title ("Under the Open Sky" 2020 and 2025): ask which one, say when nothing was
+    // found, and let a wrong automatic guess be corrected
+    let lastMatchesKey = '';
+    function renderMatches(data) {
+        const state = data.searchState;
+        const matches = data.matches || [];
+        const key = JSON.stringify([state, matches, data.imdbId, data.title]);
+        if (key === lastMatchesKey) return;
+        lastMatchesKey = key;
+
+        const box = document.getElementById('matchBox');
+        box.textContent = '';
+        const others = matches.filter(m => m.imdbId !== data.imdbId);
+        let heading = '';
+        let options = [];
+        let collapsed = false;
+        if (state === 'choose') {
+            heading = 'Several films match. Which one is it?';
+            options = matches;
+        } else if (state === 'not_found') {
+            heading = 'No English subtitles found for ' + data.title + '. ' +
+                (others.length ? 'Is it one of these?' : 'Try another spelling, add the year, or upload a file.');
+            options = others;
+        } else if (state === 'found' && others.length) {
+            collapsed = true;
+            options = others;
+        }
+        box.hidden = !heading && options.length === 0;
+        if (box.hidden) return;
+
+        let container = box;
+        if (collapsed) {
+            container = document.createElement('details');
+            container.appendChild(textElement('summary', '', 'Not the right film?'));
+            box.appendChild(container);
+        } else {
+            box.appendChild(textElement('div', 'notice', heading));
+        }
+        const list = document.createElement('div');
+        list.className = 'tracks';
+        for (const m of options) {
+            const item = document.createElement('div');
+            item.className = 'track';
+            item.setAttribute('role', 'button');
+            item.addEventListener('click', () => chooseMatch(m.imdbId));
+            const text = document.createElement('div');
+            text.className = 'track-text';
+            text.append(textElement('div', 'track-name', m.title));
+            item.append(textElement('span', 'match-icon', '\u25B8'), text);
+            list.appendChild(item);
+        }
+        container.appendChild(list);
+    }
+
+    async function chooseMatch(imdbId) {
+        lastMatchesKey = '';
+        document.getElementById('matchBox').hidden = true;
+        searchStartedAt = Date.now();
+        showTrackMessage('Searching\u2026');
+        await api('/api/choose?imdbId=' + encodeURIComponent(imdbId));
+        setTimeout(fetchStatus, 1500);
     }
 
     // Picks remembered on the TV (track + timing per title), newest first, minus what is loaded now
