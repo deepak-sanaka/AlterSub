@@ -64,7 +64,7 @@ AlterSub/
 │   │   │   │           └── MainActivity.kt          # AppCompat TV setup screen, permission shortcuts, test trigger
 │   │   │   └── res/
 │   │   │       ├── drawable/                        # ic_launcher, ic_launcher_banner for Android TV
-│   │   │       ├── layout/activity_main.xml         # TV setup layout (plain Views; Leanback library is declared but unused)
+│   │   │       ├── layout/activity_main.xml         # TV setup layout (plain AppCompat Views)
 │   │   │       ├── values/                          # colors, strings, styles
 │   │   │       └── xml/accessibility_service_config.xml # Accessibility config with event throttling
 │   │   └── test/java/com/altersub/
@@ -334,7 +334,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
 | KI-12 | Medium | Platform | Overlay foreground service never stops once started |
 | KI-18 | Medium | Timing | Multiple active media sessions all drive the same clock |
-| KI-24 | Low | Build / Config | Unused Leanback dependency; unnecessary `usesCleartextTraffic` |
 | KI-25 | Low | UI | TV setup screen: focused button only partly scrolled into view; weak focus highlight |
 
 ### 7.2 High Severity
@@ -454,7 +453,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 
 | ID | Issue | Implication | Fix direction |
 | :--- | :--- | :--- | :--- |
-| KI-24 | `androidx.leanback` is declared but unused; `android:usesCleartextTraffic="true"` though all outbound calls are HTTPS (inbound server traffic is unaffected by this flag). | Larger APK than necessary; cleartext is allowed for no reason. | Remove both. |
 | KI-25 | On the 1080p TV emulator, D-pad focus reaches "Test Subtitle Overlay", but the `ScrollView` (32dp padding) leaves the button mostly below the visible area. Default AppCompat buttons give only a faint raised-shadow focus cue. | From the couch, users can't see which button is focused or what they're about to press. | Bottom padding inside the scrolled content (or `clipToPadding=false`); a TV focus style (scale + bright outline) via a state-list drawable, or Leanback/`androidx.tv` components. |
 
 ### 7.5 Resolved
@@ -477,6 +475,7 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | 2026-10-03 | **KI-20**: three separate OkHttpClients, unclosed non-2xx responses, and blocking `execute()` calls that ignored coroutine cancellation. | One shared `Http.client`; every response closed via `use { }`; a cancellable `Call.await()` cancels the HTTP call with the coroutine (providers re-throw `CancellationException` instead of swallowing it). |
 | 2026-10-03 | **KI-21**: the live Stremio test ran in `testDebugUnitTest`, which AGENTS.md requires before every commit, so commits failed offline. | Live-network tests are skipped via `Assume` unless Gradle is run with `-PliveTests` (passed to the test JVM as `altersub.liveTests`). |
 | 2026-10-03 | **KI-22**: no tests for sleep calculation, provider parsing, web server routes, or orchestration. | `SubtitleIndexTest`; MockWebServer tests for all three providers (base URLs injectable); `WebRemoteServerTest` over a `RemoteController` interface; orchestration extracted from `AlterSubApp` into `SubtitleSession` with `SubtitleSessionTest` covering stale results, user-choice precedence, upload scoping and per-track offsets. 67 tests run offline. |
+| 2026-10-03 | **KI-24**: unused `androidx.leanback` dependency and an unnecessary `usesCleartextTraffic="true"`. | Both removed, along with the unused `RECEIVE_BOOT_COMPLETED` permission (no boot receiver exists). Verified on the TV emulator: HTTPS searches/downloads, the web remote (inbound HTTP) and the TV launcher entry all still work. |
 
 ---
 

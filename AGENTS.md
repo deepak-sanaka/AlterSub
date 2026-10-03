@@ -44,7 +44,7 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
 * **HTTP Client**: OkHttp 4 (`okhttp:4.12.0`).
 * **Embedded Web Server**: NanoHTTPD 2.3 (`org.nanohttpd:nanohttpd:2.3.1`) — ultra-lightweight (~50KB jar, <2MB RAM).
 * **UI**:
-  * TV Dashboard: AndroidX Leanback (`leanback:1.0.0`) + AppCompat.
+  * TV Dashboard: AppCompat with plain Views (D-pad navigable); listed in the TV launcher via `LEANBACK_LAUNCHER`. No Leanback library.
   * Overlay: Pure Android `Canvas` / `TextPaint` custom View.
 
 ---

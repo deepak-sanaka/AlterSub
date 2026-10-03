@@ -19,7 +19,6 @@
     <uses-permission
         android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
         tools:targetApi="upside_down_cake" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".AlterSubApp"
@@ -28,8 +27,7 @@
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AlterSub"
-        android:usesCleartextTraffic="true">
+        android:theme="@style/Theme.AlterSub">
 
         <!-- Main TV Activity -->
         <activity
