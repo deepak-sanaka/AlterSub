@@ -54,17 +54,18 @@ class AlterSubApp : Application(), RemoteController {
         )
     }
 
-    /** The phone page's UI font, served from the TV so the page needs no internet. Read once, on first request. */
-    private val webFonts = HashMap<String, ByteArray>()
-
-    private fun webFont(weight: String): ByteArray? = synchronized(webFonts) {
+    /**
+     * The phone page's UI font, served from the TV so the page needs no internet. Read per request and not
+     * kept: browsers cache it for a week, so holding ~235 KB in this long-lived process would be wasted RAM.
+     */
+    private fun webFont(weight: String): ByteArray? {
         val resId = when (weight) {
             "regular" -> R.font.app_sans_regular
             "medium" -> R.font.app_sans_medium
             "bold" -> R.font.app_sans_bold
             else -> return null
         }
-        webFonts.getOrPut(weight) { resources.openRawResource(resId).use { it.readBytes() } }
+        return resources.openRawResource(resId).use { it.readBytes() }
     }
 
     sealed interface WebRemoteState {

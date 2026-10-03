@@ -40,6 +40,12 @@ android {
         viewBinding = true
     }
 
+    androidResources {
+        // Fonts stay uncompressed so they are memory-mapped from the APK instead of inflated into the heap
+        // (~157 KB more APK, ~235 KB less RAM on 1GB boxes)
+        noCompress += "ttf"
+    }
+
     testOptions {
         // android.jar stubs (SystemClock, Log) return defaults instead of throwing, so JVM tests can
         // construct SubtitleClock and exercise code paths that log

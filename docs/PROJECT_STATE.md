@@ -61,7 +61,8 @@ AlterSub/
 │   │   │   │   └── ui/
 │   │   │   │       ├── overlay/
 │   │   │   │       │   └── SubtitleTextView.kt      # Hardware-accelerated canvas with stroked text & auto-fit
-│   │   │   │       └── settings/
+│   │   │   │       ├── AppFont.kt                   # Applies AlterSub Sans in code (one shared font collection)
+│   │   │       └── settings/
 │   │   │   │           ├── MainActivity.kt          # TV setup screen: setup checklist, phone-remote QR/PIN, test trigger
 │   │   │   │           └── QrCode.kt                # ZXing QR → 1-px-per-module bitmap, scaled up unfiltered
 │   │   │   └── res/
@@ -270,6 +271,10 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
     * The QR code in a 1080p screenshot decoded (ZXing) to `http://192.168.232.2:8080/#pin=371785`, matching the PIN on screen. Opening that link in a browser with no stored token paired it and removed the PIN from the address bar.
     * Phone page at 375px: no horizontal scroll; search, track switching, timing and colour swatches all work; a wrong PIN shows the error on the pairing card.
     * **Single phone + font (later the same day)**: An install over a build with 3 stored tokens kept only the newest, so the TV opened in the "Paired" state. **Unpair phone** on the TV switched the card to the QR/PIN view live and moved focus to **Turn off**. Pairing through the QR link worked; a second pairing attempt with the correct PIN got 409 with an explanation; "Unpair this phone" on the phone cleared its token and returned it to the pairing card, and the TV went back to "Waiting for phone". The phone page loaded all three font weights from the TV.
+    * **Footprint of the UI refresh + font** (clean debug builds; memory as total PSS, 3 runs each, ±3 MB run-to-run noise on the emulator):
+      * APK 8.90 MB → 9.72 MB (+0.82 MB): ZXing code +565 KB (unshrunk, `isMinifyEnabled = false`), fonts +235 KB (stored uncompressed), resources/licence ~+12 KB.
+      * Memory with the TV screen open 39.8–39.9 MB → 39.4–39.9 MB, in the background 40.3 → 40.1 MB: no measurable change.
+      * The first font build set the font through the theme, which cost a steady **+4.2 MB of native memory** (framework and AppCompat each build a font collection carrying the full system fallback chain). Applying it in code via `ui/AppFont` (one shared typeface, weights derived from it) removed that entirely. Storing the TTFs uncompressed lets them be memory-mapped instead of inflated, and the web server no longer keeps a copy of the font bytes.
     * **Cost on the emulator** (software GL, so absolute numbers are pessimistic; same key presses, old vs new screen): UI-thread time per frame ~1–2 ms for both, GPU command time 13.6–14.6 ms (old) vs 16–17.5 ms (new), total frame time 37–41 ms vs 37–42 ms. No frames are drawn while idle. PSS 42.7 MB (old) vs 42.1 MB (new). Card borders and a second full-screen background fill were removed to get there.
 
 ### 5.3 Not Yet Verified
@@ -473,7 +478,7 @@ None open.
 * **Current Status**: Prototype / alpha.
   * **Works today**: builds and 87 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload, track selection, per-track offset, "Set time" and subtitle style.
   * **Open issues**: High and Medium only (§7.1). Most importantly, automatic detection and sync against real streaming apps on a physical TV is unproven (KI-1), and on the emulator accessibility auto-detection fired on the TV launcher's UI text (KI-3).
-* **Artifact Location**: `app/build/outputs/apk/debug/app-debug.apk` (~9.5 MB from a clean build; incremental debug builds leave dead space and can be much larger).
+* **Artifact Location**: `app/build/outputs/apk/debug/app-debug.apk` (~9.7 MB from a clean build; incremental debug builds leave dead space and can be much larger). R8 is off (`isMinifyEnabled = false`); turning it on would mainly shrink library code such as ZXing, but needs keep rules and testing.
 * **Recommended Next Steps** (in order):
   1. **Device validation (KI-1)**: real Android TV + Netflix/Prime/Disney+; record MediaSession and accessibility output per app.
   2. **Sourcing resilience (KI-2)**: propagate the IMDb ID so YTS works; add OpenSubtitles API-key entry.

@@ -31,6 +31,7 @@ import com.altersub.server.RemoteAuth
 import com.altersub.server.WebRemoteServer
 import com.altersub.service.AccessibilityInspectorService
 import com.altersub.service.MediaNotificationListener
+import com.altersub.ui.AppFont
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.net.Inet4Address
@@ -46,6 +47,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        AppFont.apply(binding.root)
 
         ipAddress = getLocalIpAddress()
         setupWebRemote()
