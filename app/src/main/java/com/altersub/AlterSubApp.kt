@@ -6,6 +6,7 @@ import android.content.Intent
 import android.util.Log
 import com.altersub.core.clock.SubtitleClock
 import com.altersub.core.model.ContentMetadata
+import com.altersub.core.model.SubtitleStyle
 import com.altersub.core.model.SubtitleTrack
 import com.altersub.core.parser.SrtParser
 import com.altersub.core.parser.SubtitleIndex
@@ -21,6 +22,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
@@ -77,9 +79,29 @@ class AlterSubApp : Application() {
         Log.e("AlterSubApp", "Subtitle overlay unavailable: $reason")
     }
 
+    private val _subtitleStyle = MutableStateFlow(SubtitleStyle())
+    val subtitleStyle: StateFlow<SubtitleStyle> = _subtitleStyle.asStateFlow()
+
+    /** Applies [change] to the subtitle style and persists it so it survives restarts. */
+    fun updateSubtitleStyle(change: (SubtitleStyle) -> SubtitleStyle) {
+        val style = _subtitleStyle.updateAndGet(change)
+        getSharedPreferences(STYLE_PREFS, MODE_PRIVATE).edit()
+            .putFloat(KEY_TEXT_SIZE, style.textSizeSp)
+            .putString(KEY_COLOR, style.color)
+            .putFloat(KEY_POSITION, style.verticalPosition)
+            .apply()
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
+
+        val stylePrefs = getSharedPreferences(STYLE_PREFS, MODE_PRIVATE)
+        _subtitleStyle.value = SubtitleStyle(
+            textSizeSp = stylePrefs.getFloat(KEY_TEXT_SIZE, SubtitleStyle.DEFAULT_TEXT_SIZE_SP),
+            color = stylePrefs.getString(KEY_COLOR, null) ?: SubtitleStyle.DEFAULT_COLOR,
+            verticalPosition = stylePrefs.getFloat(KEY_POSITION, SubtitleStyle.DEFAULT_VERTICAL_POSITION)
+        )
 
         // Start embedded web server for mobile companion remote
         try {
@@ -183,6 +205,11 @@ class AlterSubApp : Application() {
     }
 
     companion object {
+        private const val STYLE_PREFS = "subtitle_style"
+        private const val KEY_TEXT_SIZE = "textSizeSp"
+        private const val KEY_COLOR = "color"
+        private const val KEY_POSITION = "verticalPosition"
+
         lateinit var instance: AlterSubApp
             private set
 

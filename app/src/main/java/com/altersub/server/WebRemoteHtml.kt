@@ -37,6 +37,10 @@ object WebRemoteHtml {
         .track-name { font-size: 14px; font-weight: 500; }
         .track-source { font-size: 11px; color: #AAA; margin-top: 2px; }
         .badge { background: #333; font-size: 10px; padding: 2px 6px; border-radius: 4px; color: #DDD; }
+        .style-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+        .style-label { width: 64px; color: #AAA; font-size: 13px; }
+        .style-value { flex: 1; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .color-btn.active { border-color: #FFE500; color: #FFE500; }
         .warning { display: none; background: #4A1C1C; color: #FFB4A9; border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-size: 13px; }
     </style>
 </head>
@@ -69,6 +73,27 @@ object WebRemoteHtml {
             <input type="text" id="seekInput" placeholder="Player time, e.g. 41:23">
             <button class="btn-accent" onclick="seekClock()">Set time</button>
         </div>
+    </div>
+
+    <div class="card">
+        <h2 style="font-size:15px; color:#AAA;">SUBTITLE STYLE</h2>
+        <div class="style-row">
+            <span class="style-label">Size</span>
+            <span class="style-value" id="styleSize">–</span>
+            <button onclick="setStyle('sizeStep=-1')">A−</button>
+            <button onclick="setStyle('sizeStep=1')">A+</button>
+        </div>
+        <div class="style-row">
+            <span class="style-label">Position</span>
+            <span class="style-value" id="stylePosition">–</span>
+            <button onclick="setStyle('positionStep=-1')">▲ Up</button>
+            <button onclick="setStyle('positionStep=1')">▼ Down</button>
+        </div>
+        <div class="style-row">
+            <span class="style-label">Color</span>
+            <span id="styleColors" style="display:flex; gap:8px; flex:1;"></span>
+        </div>
+        <button onclick="setStyle('reset=1')" style="width:100%; margin-top:12px;">RESET STYLE</button>
     </div>
 
     <div class="card">
@@ -115,6 +140,7 @@ object WebRemoteHtml {
                 document.getElementById('playPauseBtn').innerText = isPlaying ? "PAUSE CLOCK" : "START CLOCK";
                 document.getElementById('clockText').innerText = "Clock " + formatTime(data.positionMs || 0) + (isPlaying ? " (running)" : " (paused)");
 
+                renderStyle(data.style);
                 renderTracks(data.tracks || [], data.activeTrackId);
             } catch(e) {}
         }
@@ -172,6 +198,33 @@ object WebRemoteHtml {
             await fetch('/api/seek?positionMs=' + ms, { method: 'POST' });
             input.value = '';
             fetchStatus();
+        }
+
+        async function setStyle(params) {
+            await fetch('/api/style?' + params, { method: 'POST' });
+            fetchStatus();
+        }
+
+        function renderStyle(style) {
+            if (!style) return;
+            document.getElementById('styleSize').textContent = Math.round(style.textSizeSp) + ' sp';
+            document.getElementById('stylePosition').textContent = Math.round(style.verticalPosition * 100) + '% down';
+
+            // Colour buttons come from the server's palette, built with textContent (no HTML injection)
+            const row = document.getElementById('styleColors');
+            if (row.childElementCount === 0) {
+                for (const name of style.colors) {
+                    const button = document.createElement('button');
+                    button.className = 'color-btn';
+                    button.dataset.color = name;
+                    button.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+                    button.addEventListener('click', () => setStyle('color=' + encodeURIComponent(name)));
+                    row.appendChild(button);
+                }
+            }
+            for (const button of row.children) {
+                button.classList.toggle('active', button.dataset.color === style.color);
+            }
         }
 
         async function togglePlay() {

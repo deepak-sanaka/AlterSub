@@ -1,5 +1,7 @@
 package com.altersub.ui.settings
 
+import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,12 +12,16 @@ import android.os.Bundle
 import android.provider.Settings
 import android.text.format.Formatter
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationManagerCompat
 import com.altersub.AlterSubApp
 import com.altersub.R
 import com.altersub.core.model.SubtitleCue
 import com.altersub.core.parser.SubtitleIndex
 import com.altersub.databinding.ActivityMainBinding
+import com.altersub.service.AccessibilityInspectorService
+import com.altersub.service.MediaNotificationListener
 import java.net.Inet4Address
 import java.net.NetworkInterface
 
@@ -52,24 +58,57 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupPermissions() {
         binding.btnOverlayPermission.setOnClickListener {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-                startActivity(intent)
-            }
+            openPermissionScreen(
+                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")),
+                "Display Over Other Apps",
+                "appops set $packageName SYSTEM_ALERT_WINDOW allow"
+            )
         }
 
         binding.btnAccessibilityPermission.setOnClickListener {
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            startActivity(intent)
+            openPermissionScreen(
+                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
+                "Accessibility Title Inspector",
+                "settings put secure enabled_accessibility_services " +
+                    "$packageName/${AccessibilityInspectorService::class.java.name}\n" +
+                    "adb shell settings put secure accessibility_enabled 1"
+            )
         }
 
         binding.btnNotificationPermission.setOnClickListener {
-            val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-            startActivity(intent)
+            openPermissionScreen(
+                Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS),
+                "MediaSession Play/Pause Sync",
+                "cmd notification allow_listener $packageName/${MediaNotificationListener::class.java.name}"
+            )
         }
+    }
+
+    /**
+     * Many Android TV builds (including the Android TV emulator images) ship without these special-access
+     * screens, and launching a missing one crashed the app. Fall back to explaining the ADB grant instead.
+     */
+    private fun openPermissionScreen(intent: Intent, permissionName: String, adbShellCommand: String) {
+        try {
+            startActivity(intent)
+            return
+        } catch (_: ActivityNotFoundException) {
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(permissionName)
+            .setMessage(
+                "This TV has no settings screen for this permission. Grant it from a computer " +
+                    "connected with ADB:\n\nadb shell $adbShellCommand"
+            )
+            .setPositiveButton("Open Settings") { _, _ ->
+                try {
+                    startActivity(Intent(Settings.ACTION_SETTINGS))
+                } catch (_: ActivityNotFoundException) {
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun updatePermissionStatuses() {
@@ -83,6 +122,29 @@ class MainActivity : AppCompatActivity() {
             "1. Display Over Other Apps: ❌ REQUIRED"
         }
         binding.btnOverlayPermission.isEnabled = !canOverlay
+
+        val inspectorEnabled = isAccessibilityInspectorEnabled()
+        binding.tvAccessibilityStatus.text = if (inspectorEnabled) {
+            "2. Accessibility Title Inspector: ✅ ENABLED"
+        } else {
+            "2. Accessibility Title Inspector: ❌ NOT ENABLED"
+        }
+        binding.btnAccessibilityPermission.isEnabled = !inspectorEnabled
+
+        val listenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
+        binding.tvNotificationStatus.text = if (listenerEnabled) {
+            "3. MediaSession Play/Pause Sync: ✅ ENABLED"
+        } else {
+            "3. MediaSession Play/Pause Sync: ❌ NOT ENABLED"
+        }
+        binding.btnNotificationPermission.isEnabled = !listenerEnabled
+    }
+
+    private fun isAccessibilityInspectorEnabled(): Boolean {
+        val inspector = ComponentName(this, AccessibilityInspectorService::class.java)
+        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            ?: return false
+        return enabled.split(':').any { ComponentName.unflattenFromString(it) == inspector }
     }
 
     private fun setupTestButton() {

@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.altersub.AlterSubApp
 import com.altersub.core.model.ContentMetadata
+import com.altersub.core.model.SubtitleStyle
 import com.altersub.detection.DetectionSource
 import fi.iki.elonen.NanoHTTPD
 import org.json.JSONArray
@@ -52,6 +53,23 @@ class WebRemoteServer(
                         clock.seekTo(positionMs)
                         jsonResponse(JSONObject().put("success", true).put("positionMs", clock.getPositionMs()))
                     }
+                }
+
+                uri == "/api/style" && method == Method.POST -> {
+                    // Relative steps and named colours only; SubtitleStyle clamps every value to a legible range
+                    val params = session.parms
+                    val app = AlterSubApp.instance
+                    app.updateSubtitleStyle { style ->
+                        if (params["reset"] == "1") {
+                            SubtitleStyle()
+                        } else {
+                            val stepped = style
+                                .withTextSizeStep(params["sizeStep"]?.toIntOrNull() ?: 0)
+                                .withPositionStep(params["positionStep"]?.toIntOrNull() ?: 0)
+                            params["color"]?.let(stepped::withColor) ?: stepped
+                        }
+                    }
+                    jsonResponse(JSONObject().put("success", true).put("style", styleJson(app.subtitleStyle.value)))
                 }
 
                 uri == "/api/toggle-play" && method == Method.POST -> {
@@ -119,9 +137,18 @@ class WebRemoteServer(
             .put("isPlaying", app.clock.isPlaying.value)
             .put("overlayRunning", app.overlayRunning.value)
             .put("overlayError", app.overlayError.value ?: "")
+            .put("style", styleJson(app.subtitleStyle.value))
             .put("tracks", tracksArray)
 
         return jsonResponse(json)
+    }
+
+    private fun styleJson(style: SubtitleStyle): JSONObject {
+        return JSONObject()
+            .put("textSizeSp", style.textSizeSp.toDouble())
+            .put("color", style.color)
+            .put("verticalPosition", style.verticalPosition.toDouble())
+            .put("colors", JSONArray(SubtitleStyle.COLORS.keys.toList()))
     }
 
     private fun handleUpload(session: IHTTPSession): Response {

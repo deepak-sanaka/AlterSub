@@ -25,6 +25,8 @@ class SubtitleTextView @JvmOverloads constructor(
     // Split once per subtitle change; onDraw iterates this by index so drawing allocates nothing (AGENTS.md Rule 2)
     private var lines: Array<String> = emptyArray()
     private var baseTextSizePx: Float = 30f * resources.displayMetrics.scaledDensity
+    // Vertical centre of the subtitle block as a fraction of the view height
+    private var verticalPosition: Float = 0.82f
 
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#FFE500") // High-visibility cinema yellow
@@ -70,6 +72,11 @@ class SubtitleTextView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun setVerticalPosition(fraction: Float) {
+        verticalPosition = fraction
+        invalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (lines.isEmpty()) return
@@ -102,8 +109,8 @@ class SubtitleTextView @JvmOverloads constructor(
         val lineHeight = textPaint.fontSpacing
         val totalTextHeight = lines.size * lineHeight
 
-        // Position subtitles comfortably above navigation bar / TV bottom (85% down the screen)
-        val startY = viewHeight * 0.82f - (totalTextHeight / 2f)
+        // Centre the block at the user-chosen height (default 82% down, above the TV's bottom edge)
+        val startY = viewHeight * verticalPosition - (totalTextHeight / 2f)
 
         // Measure scaled width for bounding box
         var scaledMaxWidth = 0f

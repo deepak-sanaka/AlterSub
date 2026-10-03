@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import com.altersub.AlterSubApp
 import com.altersub.R
 import com.altersub.ui.overlay.SubtitleTextView
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -27,6 +28,7 @@ class SubtitleOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var subtitleView: SubtitleTextView? = null
     private var renderJob: Job? = null
+    private var styleJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -36,7 +38,23 @@ class SubtitleOverlayService : Service() {
             return
         }
         AlterSubApp.instance.onOverlayStarted()
+        startStyleUpdates()
         startRenderLoop()
+    }
+
+    private fun startStyleUpdates() {
+        styleJob?.cancel()
+        val app = AlterSubApp.instance
+        // Size, colour and position changes from the phone remote apply live
+        styleJob = app.appScope.launch(Dispatchers.Main) {
+            app.subtitleStyle.collect { style ->
+                subtitleView?.apply {
+                    setTextSizeSp(style.textSizeSp)
+                    setTextColor(style.colorArgb)
+                    setVerticalPosition(style.verticalPosition)
+                }
+            }
+        }
     }
 
     private fun startInForeground() {
@@ -131,6 +149,7 @@ class SubtitleOverlayService : Service() {
         super.onDestroy()
         if (subtitleView != null) AlterSubApp.instance.onOverlayStopped()
         renderJob?.cancel()
+        styleJob?.cancel()
         subtitleView?.let {
             windowManager?.removeView(it)
             subtitleView = null

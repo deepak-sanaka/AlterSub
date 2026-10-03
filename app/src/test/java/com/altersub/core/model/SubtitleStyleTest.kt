@@ -1,0 +1,36 @@
+package com.altersub.core.model
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class SubtitleStyleTest {
+
+    @Test
+    fun testTextSizeStepsAreClamped() {
+        val style = SubtitleStyle()
+        assertEquals(32f, style.withTextSizeStep(1).textSizeSp)
+        assertEquals(26f, style.withTextSizeStep(-2).textSizeSp)
+        assertEquals(SubtitleStyle.MAX_TEXT_SIZE_SP, style.withTextSizeStep(1_000).textSizeSp)
+        assertEquals(SubtitleStyle.MIN_TEXT_SIZE_SP, style.withTextSizeStep(-1_000).textSizeSp)
+    }
+
+    @Test
+    fun testPositionStepsAreRoundedAndClamped() {
+        var style = SubtitleStyle()
+        repeat(3) { style = style.withPositionStep(-1) }
+        assertEquals(0.76f, style.verticalPosition) // No float drift from repeated steps
+        assertEquals(SubtitleStyle.MAX_POSITION, SubtitleStyle().withPositionStep(50).verticalPosition)
+        assertEquals(SubtitleStyle.MIN_POSITION, SubtitleStyle().withPositionStep(-50).verticalPosition)
+    }
+
+    @Test
+    fun testOnlyPaletteColorsAreAccepted() {
+        val white = SubtitleStyle().withColor("white")
+        assertEquals("white", white.color)
+        assertEquals(0xFFFFFFFF.toInt(), white.colorArgb)
+
+        // Unknown names (or injected markup) leave the style unchanged
+        assertEquals("white", white.withColor("<script>").color)
+        assertEquals(SubtitleStyle.COLORS.getValue("yellow"), SubtitleStyle(color = "bogus").colorArgb)
+    }
+}
