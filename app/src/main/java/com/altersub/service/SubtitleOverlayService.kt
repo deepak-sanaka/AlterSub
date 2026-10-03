@@ -31,7 +31,11 @@ class SubtitleOverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         startInForeground()
-        attachOverlay()
+        if (!attachOverlay()) {
+            stopSelf()
+            return
+        }
+        AlterSubApp.instance.onOverlayStarted()
         startRenderLoop()
     }
 
@@ -59,7 +63,8 @@ class SubtitleOverlayService : Service() {
         startForeground(1001, notification)
     }
 
-    private fun attachOverlay() {
+    /** Returns false (and reports why) if the window can't be added, e.g. "Display over other apps" was revoked. */
+    private fun attachOverlay(): Boolean {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
         val layoutParams = WindowManager.LayoutParams(
@@ -81,8 +86,18 @@ class SubtitleOverlayService : Service() {
             gravity = Gravity.TOP or Gravity.START
         }
 
-        subtitleView = SubtitleTextView(this)
-        windowManager?.addView(subtitleView, layoutParams)
+        val view = SubtitleTextView(this)
+        return try {
+            windowManager?.addView(view, layoutParams)
+            subtitleView = view
+            true
+        } catch (e: RuntimeException) {
+            // BadTokenException / SecurityException: without the overlay permission this used to crash the app
+            AlterSubApp.instance.onOverlayFailed(
+                "AlterSub isn't allowed to display over other apps. Grant \"Display over other apps\" in AlterSub on the TV."
+            )
+            false
+        }
     }
 
     private fun startRenderLoop() {
@@ -114,6 +129,7 @@ class SubtitleOverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (subtitleView != null) AlterSubApp.instance.onOverlayStopped()
         renderJob?.cancel()
         subtitleView?.let {
             windowManager?.removeView(it)

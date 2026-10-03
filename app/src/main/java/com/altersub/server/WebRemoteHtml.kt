@@ -37,6 +37,7 @@ object WebRemoteHtml {
         .track-name { font-size: 14px; font-weight: 500; }
         .track-source { font-size: 11px; color: #AAA; margin-top: 2px; }
         .badge { background: #333; font-size: 10px; padding: 2px 6px; border-radius: 4px; color: #DDD; }
+        .warning { display: none; background: #4A1C1C; color: #FFB4A9; border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-size: 13px; }
     </style>
 </head>
 <body>
@@ -47,6 +48,7 @@ object WebRemoteHtml {
         </div>
         <div class="title" id="detectedTitle">Scanning TV...</div>
         <div class="subtitle" id="activeTrackName">No active subtitle track</div>
+        <div class="warning" id="overlayWarning"></div>
     </div>
 
     <div class="card">
@@ -101,7 +103,11 @@ object WebRemoteHtml {
                 
                 document.getElementById('detectedTitle').innerText = data.title || "No Content Detected";
                 document.getElementById('activeTrackName').innerText = data.activeTrack ? "Active: " + data.activeTrack : "No active track";
-                
+
+                const warning = document.getElementById('overlayWarning');
+                warning.textContent = data.overlayError || "";
+                warning.style.display = data.overlayError ? "block" : "none";
+
                 offsetValue = data.offsetMs || 0;
                 document.getElementById('offsetText').innerText = (offsetValue >= 0 ? '+' : '') + (offsetValue / 1000).toFixed(2) + 's';
                 

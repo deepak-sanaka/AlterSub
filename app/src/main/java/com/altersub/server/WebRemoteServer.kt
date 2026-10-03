@@ -117,6 +117,8 @@ class WebRemoteServer(
             .put("offsetMs", app.clock.userOffsetMs.value)
             .put("positionMs", app.clock.getPositionMs())
             .put("isPlaying", app.clock.isPlaying.value)
+            .put("overlayRunning", app.overlayRunning.value)
+            .put("overlayError", app.overlayError.value ?: "")
             .put("tracks", tracksArray)
 
         return jsonResponse(json)

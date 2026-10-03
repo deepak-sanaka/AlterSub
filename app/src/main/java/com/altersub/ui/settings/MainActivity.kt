@@ -2,6 +2,7 @@ package com.altersub.ui.settings
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -35,6 +36,13 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updatePermissionStatuses()
+
+        // Start the overlay while we're in the foreground, where Android always allows it. On a TV it then
+        // stays up, so later detections never have to start a foreground service from the background.
+        // Skipped on phones, where an always-present full-screen overlay would block touches (KI-11).
+        if (Settings.canDrawOverlays(this) && packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)) {
+            AlterSubApp.startOverlayService(this)
+        }
     }
 
     private fun setupIpAddress() {

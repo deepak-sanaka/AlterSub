@@ -92,6 +92,8 @@ AlterSub/
   * Flags: `FLAG_NOT_FOCUSABLE` | `FLAG_NOT_TOUCHABLE` | `FLAG_LAYOUT_IN_SCREEN` | `FLAG_LAYOUT_NO_LIMITS` | `FLAG_HARDWARE_ACCELERATED`.
   * **Result**: Subtitles render completely transparent to the remote control. Every user click on the TV remote passes straight through to Netflix. (Touchscreens are a different story — see KI-11.)
   * The window is `MATCH_PARENT` (full screen) and the service has no stop path once started (KI-11, KI-12).
+  * **Lifecycle**: On TV devices the service is started whenever AlterSub's own screen is resumed. That's a foreground context, where Android always allows foreground-service starts. Because it then stays up, later detections never need a background start. Track activation still calls `startOverlayService` as a fallback, which skips the call when the overlay is already running.
+  * **Failures are reported, not fatal**: If a background start is refused (`ForegroundServiceStartNotAllowedException`) or the window can't be added (overlay permission revoked), the reason is published as `overlayError`. It appears in `/api/status` and as a warning on the phone remote, where previously a missing permission crashed the service.
 * **Rendering View**: `SubtitleTextView`.
   * High-visibility cinema yellow text fill (`#FFE500`).
   * Black stroke outline (`Paint.Style.STROKE`, width = text size ÷ 7) drawn underneath fill so text remains sharp against white backgrounds (e.g. snowy scenes, explosion flashes).
@@ -160,7 +162,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`.
 * Accessible from any phone on the same Wi-Fi network at `http://<tv-ip>:8080`, **with no authentication** (KI-7, KI-8).
 * **Endpoints**:
   * `GET /`: Serves complete, zero-dependency dark-mode HTML/CSS/JS remote.
-  * `GET /api/status`: Returns JSON with active movie title, active subtitle track, +/- ms offset, clock position (`positionMs`, excluding offset), play state, and track candidates.
+  * `GET /api/status`: Returns JSON with active movie title, active subtitle track, +/- ms offset, clock position (`positionMs`, excluding offset), play state, and track candidates, plus `overlayRunning` and `overlayError`.
   * `POST /api/offset?delta=<ms>`: Fine-tunes subtitle sync delay.
   * `POST /api/seek?positionMs=<ms>`: Sets the clock to the player's on-screen time (for apps that don't publish a MediaSession position). The remote accepts `41:23` / `1:05:10` input.
   * `POST /api/toggle-play`: Manually forces clock play/pause.
@@ -317,7 +319,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | KI-10 | Medium | Privacy / Distribution | Accessibility service watches every app and requests unused capabilities |
 | KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
 | KI-12 | Medium | Platform | Overlay foreground service never stops once started |
-| KI-16 | Low | Platform | Background foreground-service start may break when `targetSdk` is raised |
 | KI-17 | Low | UI | TV setup screen shows only 1 of 3 permission states; no subtitle style settings |
 | KI-18 | Medium | Timing | Multiple active media sessions all drive the same clock |
 | KI-19 | Low | Timing | User sync offset carries over to the next title |
@@ -444,7 +445,6 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 
 | ID | Issue | Implication | Fix direction |
 | :--- | :--- | :--- | :--- |
-| KI-16 | The overlay foreground service is started from background contexts (detection callbacks, web server). That works today at `targetSdk 34`, presumably via the overlay-permission/bound-service exemptions. | Raising `targetSdk` to 35 tightens the overlay-permission exemption (a visible overlay window is required first), which could throw `ForegroundServiceStartNotAllowedException`. | Re-test background start when bumping `targetSdk`; keep the service alive rather than starting it on demand. |
 | KI-17 | `MainActivity` refreshes only the overlay permission status. `tvAccessibilityStatus`/`tvNotificationStatus` are never updated; reproduced on the TV emulator, where both rows still said "ENABLE" while enabled. `setTextSizeSp`/`setTextColor` exist but nothing calls them. | Users can't tell from the TV whether detection is enabled. Subtitle size and colour can't be customised. | Check enabled services in `onResume`; expose size, colour and position in the web remote. |
 | KI-19 | `userOffsetMs` is not reset when content changes. | An offset tuned for one release carries over, so the next title starts out of sync. | Reset (or remember per content key) on content change. |
 | KI-20 | Three separate `OkHttpClient` instances; non-2xx responses are never closed; blocking `execute()` ignores coroutine cancellation. | Extra threads and connection pools on 1GB devices; OkHttp leak warnings; cancelled searches still finish their HTTP calls (results are discarded). | One shared client; `response.use { }`; consider OkHttp's suspend `await` / `Call.cancel()` on cancellation. |
@@ -467,6 +467,7 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 | 2026-10-03 | **KI-13**: the render loop slept at most 500ms (≥2 wakeups/s) and posted to the UI thread every tick. | Event-driven loop over `clock.changes` + the active index: sleeps exactly to the next cue boundary, never wakes while paused, and posts only when the text changes. |
 | 2026-10-03 | **KI-14**: `SubtitleTextView.onDraw` split the text on every draw; `SrtParser` and `TitleSanitizer` compiled regexes on every line/call. | Lines are split once in `setSubtitle` and drawn by index (no allocation in `onDraw`); all regexes and the UI-junk set are precompiled fields. |
 | 2026-10-03 | **KI-15**: the parser read UTF-8 only, showed one of several overlapping cues, merged cues when a blank line was missing, and dropped hour-less VTT timestamps. | BOM / BOM-less UTF-16 / strict-UTF-8 detection with Windows-1252 fallback; an overlap-aware index (`getTextAt`) showing all active cues; recovery from missing separators; VTT `mm:ss.mmm`, cue settings and HTML entities. |
+| 2026-10-03 | **KI-16**: the overlay foreground service was only ever started on demand from background contexts, and a refused start or missing overlay permission failed silently or crashed the service. | Started from `MainActivity.onResume` on TV devices and kept alive; no redundant restarts while running; failures are caught and surfaced as `overlayError` in `/api/status` and the phone remote. Re-test background starts when raising `targetSdk`. |
 
 ---
 

@@ -55,6 +55,28 @@ class AlterSubApp : Application() {
 
     val acceptsScreenDetection: Boolean get() = arbiter.acceptsScreenDetection
 
+    private val _overlayRunning = MutableStateFlow(false)
+    val overlayRunning: StateFlow<Boolean> = _overlayRunning.asStateFlow()
+
+    // Why subtitles can't be displayed right now (shown on the phone remote), or null when the overlay is fine
+    private val _overlayError = MutableStateFlow<String?>(null)
+    val overlayError: StateFlow<String?> = _overlayError.asStateFlow()
+
+    fun onOverlayStarted() {
+        _overlayRunning.value = true
+        _overlayError.value = null
+    }
+
+    fun onOverlayStopped() {
+        _overlayRunning.value = false
+    }
+
+    fun onOverlayFailed(reason: String) {
+        _overlayRunning.value = false
+        _overlayError.value = reason
+        Log.e("AlterSubApp", "Subtitle overlay unavailable: $reason")
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -165,14 +187,17 @@ class AlterSubApp : Application() {
             private set
 
         fun startOverlayService(context: Context) {
-            val intent = Intent(context, SubtitleOverlayService::class.java)
+            // Once running it stays up, so never re-issue a foreground-service start (possibly from the background)
+            if (instance.overlayRunning.value) return
+
             try {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    context.startForegroundService(intent)
-                } else {
-                    context.startService(intent)
-                }
+                context.startForegroundService(Intent(context, SubtitleOverlayService::class.java))
             } catch (e: Exception) {
+                // Android 12+ refuses foreground-service starts from the background unless an exemption applies
+                // (ForegroundServiceStartNotAllowedException); targetSdk 35 narrows the overlay-permission one
+                instance.onOverlayFailed(
+                    "Android blocked starting the subtitle overlay in the background. Open AlterSub on the TV once, then go back to your app."
+                )
                 Log.e("AlterSubApp", "Could not start SubtitleOverlayService: ${e.message}")
             }
         }
