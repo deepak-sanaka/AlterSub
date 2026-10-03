@@ -1,9 +1,5 @@
 # AGENTS.md — Guidance for AI Agents & Automated Contributors
 
-> This document provides critical architectural context, constraints, and instructions for AI coding agents (such as Antigravity, Claude, Copilot, Cursor, etc.) working on the **AlterSub** codebase.
-
----
-
 ## 1. Project Mission & Identity
 
 **AlterSub** is an independent, non-intrusive subtitle overlay application for **Android TV**. It detects media content playing in commercial streaming apps (e.g., Netflix, Prime Video, Disney+, Hotstar) and overlays synchronized external subtitles (sourced from community repositories, APIs, or user phone uploads) directly over the video player.
