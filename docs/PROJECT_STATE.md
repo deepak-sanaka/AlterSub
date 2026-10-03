@@ -450,8 +450,7 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 
 ### 7.4 Low Severity
 
-| ID | Issue | Implication | Fix direction |
-| :--- | :--- | :--- | :--- |
+None open. All eleven low-severity issues (KI-13–17, KI-19–22, KI-24, KI-25) were resolved on 2026-10-03; see §7.5.
 
 ### 7.5 Resolved
 
@@ -481,8 +480,8 @@ Drive it with D-pad key events, e.g. `adb shell input keyevent KEYCODE_DPAD_DOWN
 ## 8. Current Project State & Next Steps
 
 * **Current Status**: Prototype / alpha.
-  * **Works today**: builds and unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus. The web remote works end to end: manual search with automatic Stremio download, upload, track selection, offset, and "Set time".
-  * **Unproven**: automatic detection and sync against real streaming apps on a physical Android TV (KI-1). On the emulator, accessibility auto-detection fired on the TV launcher's UI text (KI-3).
+  * **Works today**: builds and 67 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: manual search with automatic Stremio download, upload, track selection, per-track offset, "Set time" and subtitle style.
+  * **Open issues**: High and Medium only (§7.1). Most importantly, automatic detection and sync against real streaming apps on a physical TV is unproven (KI-1), and on the emulator accessibility auto-detection fired on the TV launcher's UI text (KI-3).
 * **Artifact Location**: `app/build/outputs/apk/debug/app-debug.apk` (~10.9 MB).
 * **Recommended Next Steps** (in order):
   1. **Device validation (KI-1)**: real Android TV + Netflix/Prime/Disney+; record MediaSession and accessibility output per app.
