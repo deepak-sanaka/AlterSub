@@ -5,6 +5,7 @@ import com.altersub.core.model.ContentMetadata
 import com.altersub.core.model.SubtitleStyle
 import com.altersub.detection.DetectionSource
 import fi.iki.elonen.NanoHTTPD
+import java.io.ByteArrayInputStream
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -17,7 +18,9 @@ class WebRemoteServer(
     private val controller: RemoteController,
     private val auth: RemoteAuth,
     private val uploadDir: File,
-    port: Int = DEFAULT_PORT
+    port: Int = DEFAULT_PORT,
+    /** Bytes of the page's UI font by weight name ("regular", "medium", "bold"), or null if unavailable. */
+    private val fonts: (String) -> ByteArray? = { null }
 ) : NanoHTTPD(port) {
 
     override fun serve(session: IHTTPSession): Response {
@@ -47,6 +50,16 @@ class WebRemoteServer(
 
                 uri == "/api/pair" && method == Method.POST -> {
                     handlePair(session.parms["pin"] ?: "")
+                }
+
+                // The paired phone disconnecting itself (the TV screen can also unpair it)
+                uri == "/api/unpair" && method == Method.POST -> {
+                    auth.revoke(session.headers[RemoteAuth.TOKEN_HEADER])
+                    jsonResponse(JSONObject().put("success", true))
+                }
+
+                uri.startsWith(FONT_PATH) && method == Method.GET -> {
+                    serveFont(uri.removePrefix(FONT_PATH))
                 }
 
                 uri == "/api/status" && method == Method.GET -> {
@@ -145,6 +158,24 @@ class WebRemoteServer(
             JSONObject().put("error", "Too many wrong PINs. Press Back on the TV, reopen AlterSub, and enter the new PIN."),
             Response.Status.TOO_MANY_REQUESTS
         )
+
+        RemoteAuth.PairResult.AlreadyPaired -> jsonResponse(
+            JSONObject().put(
+                "error",
+                "This TV is already paired with another phone. Unpair it on the TV (Phone remote \u2192 Unpair phone) or from that phone, then try again."
+            ),
+            Response.Status.CONFLICT
+        )
+    }
+
+    /** UI font files for the phone page. Public (no pairing needed) and cached by the browser for a week. */
+    private fun serveFont(fileName: String): Response {
+        val weight = FONT_FILE.matchEntire(fileName)?.groupValues?.get(1)
+        val bytes = weight?.let(fonts)
+            ?: return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
+        return newFixedLengthResponse(Response.Status.OK, "font/ttf", ByteArrayInputStream(bytes), bytes.size.toLong()).apply {
+            addHeader("Cache-Control", "public, max-age=604800")
+        }
     }
 
     private fun handleStatus(): Response {
@@ -223,6 +254,8 @@ class WebRemoteServer(
 
     companion object {
         private const val TAG = "WebRemoteServer"
+        private const val FONT_PATH = "/fonts/"
+        private val FONT_FILE = Regex("app-sans-(regular|medium|bold)\\.ttf")
         const val DEFAULT_PORT = 8080
 
         /** 8080 is a common default (Kodi's web interface uses it), so a few neighbours are tried before giving up. */

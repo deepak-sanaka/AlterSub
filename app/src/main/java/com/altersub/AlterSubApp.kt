@@ -44,13 +44,27 @@ class AlterSubApp : Application(), RemoteController {
     val subtitleIndex: StateFlow<SubtitleIndex?> get() = session.subtitleIndex
     val acceptsScreenDetection: Boolean get() = session.acceptsScreenDetection
 
-    /** Phone remote pairing. Paired phones' tokens are persisted, so phones stay paired across restarts. */
+    /** Phone remote pairing (one phone). Its token is persisted, so the phone stays paired across restarts. */
     val remoteAuth by lazy {
         val prefs = getSharedPreferences(REMOTE_PREFS, MODE_PRIVATE)
         RemoteAuth(
-            savedTokens = prefs.getString(KEY_TOKENS, null)?.split(',')?.filter { it.isNotEmpty() }.orEmpty(),
-            onTokensChanged = { tokens -> prefs.edit().putString(KEY_TOKENS, tokens.joinToString(",")).apply() }
+            // Older builds stored several comma-separated tokens; only the newest phone stays paired
+            savedToken = prefs.getString(KEY_TOKENS, null)?.split(',')?.lastOrNull { it.isNotEmpty() },
+            onTokenChanged = { token -> prefs.edit().putString(KEY_TOKENS, token.orEmpty()).apply() }
         )
+    }
+
+    /** The phone page's UI font, served from the TV so the page needs no internet. Read once, on first request. */
+    private val webFonts = HashMap<String, ByteArray>()
+
+    private fun webFont(weight: String): ByteArray? = synchronized(webFonts) {
+        val resId = when (weight) {
+            "regular" -> R.font.app_sans_regular
+            "medium" -> R.font.app_sans_medium
+            "bold" -> R.font.app_sans_bold
+            else -> return null
+        }
+        webFonts.getOrPut(weight) { resources.openRawResource(resId).use { it.readBytes() } }
     }
 
     sealed interface WebRemoteState {
@@ -74,7 +88,7 @@ class AlterSubApp : Application(), RemoteController {
         if (webRemoteServer != null) return
 
         val server = WebRemoteServer.startOnFirstFreePort(WebRemoteServer.PORTS) { port ->
-            WebRemoteServer(this, remoteAuth, File(cacheDir, "uploads"), port)
+            WebRemoteServer(this, remoteAuth, File(cacheDir, "uploads"), port, ::webFont)
         }
         webRemoteServer = server
         if (server != null) {

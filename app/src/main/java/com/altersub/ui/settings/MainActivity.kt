@@ -80,59 +80,81 @@ class MainActivity : AppCompatActivity() {
             app.setWebRemoteEnabled(app.webRemoteState.value !is WebRemoteState.Running)
         }
         binding.btnUnpairPhones.setOnClickListener {
-            app.remoteAuth.unpairAll()
-            Toast.makeText(this, "Phones unpaired. Enter the PIN again on a phone to use it.", Toast.LENGTH_LONG).show()
+            app.remoteAuth.unpair()
+            Toast.makeText(this, "Phone unpaired. Scan the code to connect a phone again.", Toast.LENGTH_LONG).show()
         }
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                combine(app.webRemoteState, app.remoteAuth.pairing, app.remoteAuth.pairedCount) { state, pairing, paired ->
+                combine(app.webRemoteState, app.remoteAuth.pairing, app.remoteAuth.isPaired) { state, pairing, paired ->
                     Triple(state, pairing, paired)
                 }.collect { (state, pairing, paired) -> renderWebRemote(state, pairing, paired) }
             }
         }
     }
 
-    private fun renderWebRemote(state: WebRemoteState, pairing: RemoteAuth.Pairing, paired: Int) {
+    private fun renderWebRemote(state: WebRemoteState, pairing: RemoteAuth.Pairing, paired: Boolean) {
+        val running = state as? WebRemoteState.Running
         val pin = (pairing as? RemoteAuth.Pairing.Open)?.pin
+        val locked = pairing == RemoteAuth.Pairing.Locked
 
-        // The QR carries the PIN, so scanning it opens the remote already paired
-        showRemoteQr((state as? WebRemoteState.Running)?.let { QrCode.remoteLink(ipAddress, it.port, pin) })
+        // Pairing is offered only while the remote is on, no phone is paired yet, and PIN entry isn't locked.
+        // The QR carries the PIN, so scanning it opens the remote already paired.
+        val pairingLink = if (running != null && !paired && pin != null) QrCode.remoteLink(ipAddress, running.port, pin) else null
+        binding.remotePairing.isVisible = pairingLink != null
+        pairingLink?.let(::showRemoteQr)
 
-        binding.tvIpAddress.isVisible = state is WebRemoteState.Running
-        when (state) {
-            is WebRemoteState.Running -> {
-                binding.tvIpAddress.text = "or open http://$ipAddress:${state.port}"
-                if (pairing == RemoteAuth.Pairing.Locked) {
-                    binding.tvRemoteHint.text = "Too many wrong PINs"
-                    binding.tvRemotePin.text = "Press Back and reopen AlterSub for a new PIN."
-                } else {
-                    binding.tvRemoteHint.text = "Scan with your phone's camera"
-                    // Grouped as "482 913" so it's easy to read from the couch
-                    binding.tvRemotePin.text = pin?.let { "and enter PIN ${it.chunked(3).joinToString(" ")}" } ?: ""
-                }
-            }
+        binding.remoteStateRow.isVisible = pairingLink == null
+        when {
+            state == WebRemoteState.Off -> showRemoteState(
+                R.drawable.ic_status_off,
+                "Phone remote is off",
+                "Turn it on to pick subtitles and fix the timing from your phone."
+            )
 
-            WebRemoteState.Off -> {
-                binding.tvRemoteHint.text = "Phone remote is off"
-                binding.tvRemotePin.text = "Turn it on to pick subtitles and fix timing from your phone."
-            }
+            state == WebRemoteState.Failed -> showRemoteState(
+                R.drawable.ic_status_todo,
+                "Couldn't start the phone remote",
+                "Ports ${WebRemoteServer.PORTS.first()}–${WebRemoteServer.PORTS.last()} are all in use. Press Retry to try again."
+            )
 
-            WebRemoteState.Failed -> {
-                val ports = WebRemoteServer.PORTS
-                binding.tvRemoteHint.text = "Phone remote couldn't start"
-                binding.tvRemotePin.text = "Ports ${ports.first()}–${ports.last()} are all in use. Press Retry to try again."
-            }
+            paired -> showRemoteState(
+                R.drawable.ic_status_done,
+                "Phone paired",
+                "Pick subtitles and fix the timing from the AlterSub page on your phone. To use another phone, unpair this one first."
+            )
+
+            locked -> showRemoteState(
+                R.drawable.ic_status_todo,
+                "Too many wrong PINs",
+                "Press Back and reopen AlterSub for a new PIN."
+            )
         }
 
-        binding.tvPairedPhones.text = when (paired) {
-            0 -> "No phones paired"
-            1 -> "1 phone paired"
-            else -> "$paired phones paired"
+        // The address is the big, easy-to-type fallback to the QR code (browsers add http:// themselves)
+        binding.remoteAddress.isVisible = running != null
+        if (running != null) {
+            binding.tvAddressLabel.text = if (paired) "Remote address" else "Or type this address in your phone's browser"
+            binding.tvIpAddress.text = "$ipAddress:${running.port}"
         }
-        // Disabling the focused button would send D-pad focus jumping up the screen, so hand it to its neighbour
-        if (paired == 0 && binding.btnUnpairPhones.isFocused) binding.btnWebRemoteToggle.requestFocus()
-        binding.btnUnpairPhones.isEnabled = paired > 0
+        binding.remotePinRow.isVisible = pairingLink != null
+        // Grouped as "482 913" so it's easy to read from the couch
+        binding.tvRemotePin.text = pin?.chunked(3)?.joinToString(" ").orEmpty()
+
+        val (chipText, chipColor, chipTextColor) = when {
+            state == WebRemoteState.Off -> Triple("Off", R.color.button_idle, R.color.text_secondary)
+            state == WebRemoteState.Failed -> Triple("Not running", R.color.status_amber, R.color.black)
+            paired -> Triple("Paired", R.color.status_green, R.color.black)
+            locked -> Triple("Locked", R.color.status_amber, R.color.black)
+            else -> Triple("Waiting for phone", R.color.button_idle, R.color.text_secondary)
+        }
+        binding.tvRemoteStatus.text = chipText
+        binding.tvRemoteStatus.backgroundTintList = ColorStateList.valueOf(getColor(chipColor))
+        binding.tvRemoteStatus.setTextColor(getColor(chipTextColor))
+
+        // Hiding the focused button would send D-pad focus jumping up the screen, so hand it to its neighbour
+        if (!paired && binding.btnUnpairPhones.isFocused) binding.btnWebRemoteToggle.requestFocus()
+        binding.btnUnpairPhones.isVisible = paired
 
         binding.btnWebRemoteToggle.text = when (state) {
             is WebRemoteState.Running -> "Turn off"
@@ -141,10 +163,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showRemoteState(icon: Int, title: String, body: String) {
+        binding.ivRemoteState.setImageResource(icon)
+        binding.tvRemoteStateTitle.text = title
+        binding.tvRemoteStateBody.text = body
+    }
+
     /** Encodes a new QR only when the link (address, port or PIN) actually changes. */
-    private fun showRemoteQr(link: String?) {
-        binding.ivRemoteQr.isVisible = link != null
-        if (link == null || link == remoteQrLink) return
+    private fun showRemoteQr(link: String) {
+        if (link == remoteQrLink) return
         remoteQrLink = link
         binding.ivRemoteQr.setImageDrawable(QrCode.drawable(resources, link))
     }

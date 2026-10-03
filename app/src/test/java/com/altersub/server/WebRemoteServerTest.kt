@@ -73,7 +73,8 @@ class WebRemoteServerTest {
     @Before
     fun setUp() {
         uploadDir = File(tempDir.root, "uploads")
-        server = WebRemoteServer(controller, auth, uploadDir, port = 0) // Port 0: any free port
+        // Port 0: any free port
+        server = WebRemoteServer(controller, auth, uploadDir, port = 0, fonts = { if (it == "regular") FONT_BYTES else null })
         server.start()
         token = pairedToken()
     }
@@ -238,12 +239,31 @@ class WebRemoteServerTest {
 
     @Test
     fun testUnpairingOnTheTvRevokesAccess() {
-        auth.unpairAll()
+        auth.unpair()
         get("/api/status").use { assertEquals(401, it.code) }
     }
 
     @Test
+    fun testThePairedPhoneCanUnpairItself() {
+        post("/api/unpair", token = "not-the-paired-phone").use { assertEquals(401, it.code) }
+        assertTrue(auth.isPaired.value)
+
+        post("/api/unpair").use { assertEquals(200, it.code) }
+
+        assertFalse(auth.isPaired.value)
+        get("/api/status").use { assertEquals(401, it.code) }
+    }
+
+    @Test
+    fun testASecondPhoneCannotPairWhileOneIsPaired() {
+        auth.openPairing()
+        post("/api/pair?pin=${pin()}", token = null).use { assertEquals(409, it.code) }
+        get("/api/status").use { assertEquals(200, it.code) } // The paired phone keeps working
+    }
+
+    @Test
     fun testPairingWithThePinShownOnTheTv() {
+        auth.unpair()
         auth.closePairing()
         post("/api/pair?pin=123456", token = null).use { assertEquals(403, it.code) }
 
@@ -256,6 +276,7 @@ class WebRemoteServerTest {
 
     @Test
     fun testTooManyWrongPinsLockPairing() {
+        auth.unpair()
         auth.openPairing()
         val pin = pin()
 
@@ -283,5 +304,21 @@ class WebRemoteServerTest {
             }
             assertNull(none)
         }
+    }
+
+    @Test
+    fun testServesTheUiFontWithoutPairing() {
+        get("/fonts/app-sans-regular.ttf", token = null).use { response ->
+            assertEquals(200, response.code)
+            assertEquals("font/ttf", response.header("Content-Type"))
+            assertTrue(response.header("Cache-Control")!!.contains("max-age"))
+            assertTrue(FONT_BYTES.contentEquals(response.body!!.bytes()))
+        }
+        get("/fonts/app-sans-bold.ttf", token = null).use { assertEquals(404, it.code) } // Not provided by this test
+        get("/fonts/../../etc/passwd", token = null).use { assertEquals(404, it.code) }
+    }
+
+    private companion object {
+        val FONT_BYTES = byteArrayOf(0, 1, 0, 0, 42)
     }
 }

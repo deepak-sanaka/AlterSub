@@ -4,6 +4,7 @@
     <color name="accent">#FFE500</color>
     <color name="background_dark">#0E0E11</color>
     <color name="card_bg">#1C1C22</color>
+    <color name="divider">#2C2C33</color>
     <color name="text_main">#F4F4F6</color>
     <color name="text_secondary">#A1A1AA</color>
     <color name="status_green">#3DDC84</color>

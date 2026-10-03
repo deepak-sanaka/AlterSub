@@ -232,7 +232,8 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- Right: phone remote -->
+            <!-- Right: phone remote. Shows either the pairing block (QR + steps) or a status row
+                 (connected / off / couldn't start / locked), then the address, then the actions -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -241,69 +242,183 @@
                 android:background="@drawable/bg_card"
                 android:clipChildren="false"
                 android:clipToPadding="false"
-                android:gravity="center_horizontal"
                 android:orientation="vertical"
-                android:padding="20dp">
+                android:padding="22dp">
 
-                <TextView
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Phone remote"
-                    android:textAppearance="@style/TextAppearance.AlterSub.SectionLabel" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
-                <ImageView
-                    android:id="@+id/ivRemoteQr"
-                    android:layout_width="156dp"
-                    android:layout_height="156dp"
-                    android:layout_marginTop="12dp"
-                    android:background="@drawable/bg_qr"
-                    android:contentDescription="QR code to open the phone remote"
-                    android:scaleType="fitCenter" />
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Phone remote"
+                        android:textAppearance="@style/TextAppearance.AlterSub.SectionLabel" />
 
-                <TextView
-                    android:id="@+id/tvRemoteHint"
-                    android:layout_width="wrap_content"
+                    <TextView
+                        android:id="@+id/tvRemoteStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_chip"
+                        android:paddingLeft="10dp"
+                        android:paddingTop="3dp"
+                        android:paddingRight="10dp"
+                        android:paddingBottom="3dp"
+                        android:textFontWeight="500"
+                        android:textSize="12sp"
+                        tools:text="Waiting for phone" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/remotePairing"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:gravity="center"
-                    android:text="Scan with your phone's camera"
-                    android:textColor="@color/text_main"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
+                    android:layout_marginTop="18dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
-                <TextView
-                    android:id="@+id/tvIpAddress"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:gravity="center"
-                    android:textColor="@color/accent"
-                    android:textSize="14sp"
-                    tools:text="or open http://192.168.1.5:8080" />
+                    <ImageView
+                        android:id="@+id/ivRemoteQr"
+                        android:layout_width="132dp"
+                        android:layout_height="132dp"
+                        android:background="@drawable/bg_qr"
+                        android:contentDescription="QR code that opens and pairs the phone remote"
+                        android:scaleType="fitCenter" />
 
-                <TextView
-                    android:id="@+id/tvRemotePin"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:gravity="center"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp"
-                    tools:text="and enter PIN 482 913" />
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="18dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
 
-                <TextView
-                    android:id="@+id/tvPairedPhones"
-                    android:layout_width="wrap_content"
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Scan to connect"
+                            android:textColor="@color/text_main"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:lineSpacingExtra="6dp"
+                            android:text="1.  Open your camera\n2.  Point it at the code\n3.  Tap the link"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/remoteStateRow"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp"
-                    tools:text="1 phone paired" />
+                    android:layout_marginTop="18dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:id="@+id/ivRemoteState"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_status_done" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="14dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/tvRemoteStateTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_main"
+                            android:textSize="18sp"
+                            android:textStyle="bold"
+                            tools:text="Phone connected" />
+
+                        <TextView
+                            android:id="@+id/tvRemoteStateBody"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp"
+                            tools:text="Pick subtitles and fix the timing from the AlterSub page on your phone." />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/remoteAddress"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginTop="18dp"
+                        android:background="@color/divider" />
+
+                    <TextView
+                        android:id="@+id/tvAddressLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        tools:text="Or type this address in your phone's browser" />
+
+                    <TextView
+                        android:id="@+id/tvIpAddress"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:textColor="@color/accent"
+                        android:textSize="26sp"
+                        android:textStyle="bold"
+                        tools:text="192.168.1.5:8080" />
+
+                    <LinearLayout
+                        android:id="@+id/remotePinRow"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:baselineAligned="true"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="and enter PIN"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:id="@+id/tvRemotePin"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="10dp"
+                            android:letterSpacing="0.06"
+                            android:textColor="@color/text_main"
+                            android:textSize="22sp"
+                            android:textStyle="bold"
+                            tools:text="482 913" />
+                    </LinearLayout>
+                </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="16dp"
                     android:clipChildren="false"
                     android:clipToPadding="false"
                     android:orientation="horizontal"
@@ -314,14 +429,14 @@
                         style="@style/Widget.AlterSub.TvButton.Compact"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Unpair all" />
+                        android:layout_marginEnd="10dp"
+                        android:text="Unpair phone" />
 
                     <Button
                         android:id="@+id/btnWebRemoteToggle"
                         style="@style/Widget.AlterSub.TvButton.Compact"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="10dp"
                         android:text="Turn off" />
                 </LinearLayout>
             </LinearLayout>

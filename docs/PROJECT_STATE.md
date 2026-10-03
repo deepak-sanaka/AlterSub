@@ -66,6 +66,7 @@ AlterSub/
 │   │   │   │           └── QrCode.kt                # ZXing QR → 1-px-per-module bitmap, scaled up unfiltered
 │   │   │   └── res/
 │   │   │       ├── drawable/                        # Launcher icons, flat card/button/chip shapes, status icons
+│   │   │       ├── font/                            # AlterSub Sans (app_sans.xml + 3 static TTFs from Google Sans Flex)
 │   │   │       ├── layout/activity_main.xml         # Two-column TV setup layout (plain AppCompat Views)
 │   │   │       ├── values/                          # colors, strings, styles
 │   │   │       └── xml/accessibility_service_config.xml # Accessibility config with event throttling
@@ -79,10 +80,12 @@ AlterSub/
 │   │       │                                        #   StremioSubtitleProviderLiveTest (real network, only with -PliveTests)
 │   │       ├── server/                              # WebRemoteServerTest (every route + token checks, port fallback), RemoteAuthTest
 │   │       └── ui/settings/QrCodeTest.kt            # The pairing link encodes and decodes back intact
+│   ├── src/main/assets/licenses/                    # OFL licence for the bundled UI font
 │   ├── build.gradle.kts                             # App module build configuration
 │   └── proguard-rules.pro                           # R8 / Proguard rules for NanoHTTPD and AlterSub models
 ├── docs/
 │   └── PROJECT_STATE.md                             # This file
+├── tools/build_app_font.py                          # Rebuilds the UI font files from upstream Google Sans Flex
 ├── gradle/wrapper/                                  # Gradle 8.13 wrapper binaries & properties
 ├── AGENTS.md                                        # Rules and constraints for AI agents / contributors
 ├── build.gradle.kts                                 # Root build configuration
@@ -178,11 +181,13 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
   * Without a valid token, every `/api/*` route except `/api/pair` returns 401 before reading the request (so unpaired uploads are never written). The page at `/` holds no data and stays public.
   * Five wrong PINs lock pairing until the TV screen is reopened, which issues a new PIN.
   * **QR code**: the TV shows a QR code for `http://<tv-ip>:<port>/#pin=<PIN>`. Scanning it opens the remote already paired. The PIN rides in the URL fragment, which browsers never send to the server, and the page removes it from the address bar once read. It changes whenever the PIN does.
-  * Up to 8 phones stay paired across restarts (tokens in `SharedPreferences`). The TV's "Phone remote" card shows how many, and has **Unpair all** and **Turn off / Turn on** (persisted).
-* **Phone page**: single self-contained page (system fonts, no external assets). Cards for Now playing, Timing (offset, clock, "Match the player's time"), Subtitles (search, track list, upload) and Appearance (size, position, colour swatches from the server's `palette`). A header pill shows whether the TV is reachable.
+  * **One phone at a time.** While a phone is paired, `/api/pair` returns 409 (even with the right PIN, without counting as a wrong guess), and the TV hides the QR/PIN and shows "Phone paired" with the address. Unpair from the TV (**Unpair phone**) or from the phone itself ("Unpair this phone", `POST /api/unpair`). The token persists across restarts (`SharedPreferences`; older builds' multi-phone lists keep only the newest).
+  * The TV's "Phone remote" card has a status chip (Waiting for phone / Paired / Locked / Off), the QR code with three short scan steps, the address in large type (`192.168.x.x:8080`, no `http://` needed) with the PIN, and **Turn off / Turn on** (persisted).
+* **Phone page**: single self-contained page; nothing loads from the internet. The UI font is served by the TV (`GET /fonts/app-sans-{regular,medium,bold}.ttf`, public, cached for a week, `font-display: swap`). Cards for Now playing, Timing (offset, clock, "Match the player's time"), Subtitles (search, track list, upload) and Appearance (size, position, colour swatches from the server's `palette`). A header pill shows whether the TV is reachable.
 * **Endpoints**:
   * `GET /`: Serves complete, zero-dependency dark-mode HTML/CSS/JS remote.
-  * `POST /api/pair?pin=<pin>`: Exchanges the TV's PIN for a token (403 wrong PIN or screen closed, 429 locked).
+  * `POST /api/pair?pin=<pin>`: Exchanges the TV's PIN for a token (403 wrong PIN or screen closed, 409 another phone is paired, 429 locked).
+  * `POST /api/unpair`: The paired phone unpairs itself.
   * `GET /api/status`: Returns JSON with active movie title, active subtitle track, +/- ms offset, clock position (`positionMs`, excluding offset), play state, and track candidates, plus `overlayRunning` and `overlayError`.
   * `POST /api/offset?delta=<ms>`: Fine-tunes subtitle sync delay.
   * `POST /api/seek?positionMs=<ms>`: Sets the clock to the player's on-screen time (for apps that don't publish a MediaSession position). The remote accepts `41:23` / `1:05:10` input.
@@ -212,7 +217,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
 
 ### 5.1 Automated Unit Tests
 * **Test Runner**: Gradle JUnit 4 on the JVM, with the real `org.json` artifact on the test classpath (Android's stub would throw).
-* **Status (2026-10-03)**: 83 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
+* **Status (2026-10-03)**: 87 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
 * **Test Suites**:
   * [`DetectionArbiterTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/DetectionArbiterTest.kt): MediaSession outranks scraping; a manual choice holds until the session title changes; scraping resumes after sessions end. (Passes)
   * [`SubtitleClockTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/clock/SubtitleClockTest.kt): MediaSession position extrapolation (elapsed time × speed, paused, missing/future snapshot, zero speed). (Passes)
@@ -264,6 +269,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
     * The TV screen fits 960×540dp without scrolling. Initial D-pad focus lands on the first unfinished step's button (or the test button once all are done), and finished steps hide their buttons. With all three granted, the chip reads "Ready".
     * The QR code in a 1080p screenshot decoded (ZXing) to `http://192.168.232.2:8080/#pin=371785`, matching the PIN on screen. Opening that link in a browser with no stored token paired it and removed the PIN from the address bar.
     * Phone page at 375px: no horizontal scroll; search, track switching, timing and colour swatches all work; a wrong PIN shows the error on the pairing card.
+    * **Single phone + font (later the same day)**: An install over a build with 3 stored tokens kept only the newest, so the TV opened in the "Paired" state. **Unpair phone** on the TV switched the card to the QR/PIN view live and moved focus to **Turn off**. Pairing through the QR link worked; a second pairing attempt with the correct PIN got 409 with an explanation; "Unpair this phone" on the phone cleared its token and returned it to the pairing card, and the TV went back to "Waiting for phone". The phone page loaded all three font weights from the TV.
     * **Cost on the emulator** (software GL, so absolute numbers are pessimistic; same key presses, old vs new screen): UI-thread time per frame ~1–2 ms for both, GPU command time 13.6–14.6 ms (old) vs 16–17.5 ms (new), total frame time 37–41 ms vs 37–42 ms. No frames are drawn while idle. PSS 42.7 MB (old) vs 42.1 MB (new). Card borders and a second full-screen background fill were removed to get there.
 
 ### 5.3 Not Yet Verified
@@ -465,7 +471,7 @@ None open.
 ## 8. Current Project State & Next Steps
 
 * **Current Status**: Prototype / alpha.
-  * **Works today**: builds and 83 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: QR or PIN pairing, manual search with automatic Stremio download, upload, track selection, per-track offset, "Set time" and subtitle style.
+  * **Works today**: builds and 87 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload, track selection, per-track offset, "Set time" and subtitle style.
   * **Open issues**: High and Medium only (§7.1). Most importantly, automatic detection and sync against real streaming apps on a physical TV is unproven (KI-1), and on the emulator accessibility auto-detection fired on the TV launcher's UI text (KI-3).
 * **Artifact Location**: `app/build/outputs/apk/debug/app-debug.apk` (~9.5 MB from a clean build; incremental debug builds leave dead space and can be much larger).
 * **Recommended Next Steps** (in order):
@@ -475,6 +481,7 @@ None open.
   4. **Web remote hardening (KI-9)**: upload size limits and validation.
   5. **Overlay lifecycle (KI-11, KI-12)**: bottom-anchored window, stop when idle.
 * **Potential Future Enhancements**:
+  0. **User-selectable subtitle font** (planned): the overlay currently uses the system sans-serif in bold, while the app UI uses AlterSub Sans. Let the user pick the subtitle font (e.g. from the phone remote's Appearance card), keeping the choice small and bundled so low-end TVs aren't loading large fonts.
   1. **TMDb Direct API integration**: For exotic media titles where Cinemeta auto-resolution returns multiple candidates.
   2. **ASS / SSA Styled Subtitles**: Parser currently strips advanced ASS vector tags to plain text; could optionally parse colored dialogue tags.
   3. **SMB / Local Network Storage Explorer**: Allow reading `.srt` files directly from a network-attached storage (NAS) or local shared folder.

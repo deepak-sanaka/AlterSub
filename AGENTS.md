@@ -40,6 +40,7 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
 * **HTTP Client**: OkHttp 4 (`okhttp:4.12.0`).
 * **Embedded Web Server**: NanoHTTPD 2.3 (`org.nanohttpd:nanohttpd:2.3.1`) — ultra-lightweight (~50KB jar, <2MB RAM).
 * **QR codes**: ZXing core (`com.google.zxing:core:3.5.3`), encoder only; pure Java, no camera or UI code.
+* **UI font**: AlterSub Sans, three static Latin instances of Google Sans Flex (SIL OFL 1.1) built by `tools/build_app_font.py` (~78 KB each). Used by the TV screen (theme `fontFamily`) and served to the phone page by the web server. Don't bundle the 4 MB variable font, and don't name derived files or families "Google Sans" (Google's trademark notes). The subtitle overlay keeps its own typeface.
 * **UI**:
   * TV Dashboard: AppCompat with plain Views (D-pad navigable); listed in the TV launcher via `LEANBACK_LAUNCHER`. No Leanback library. Keep it cheap to draw: flat shape drawables (no elevation shadows, border strokes or blur), no idle animations, and no view background that repaints the full screen over the window background.
   * Overlay: Pure Android `Canvas` / `TextPaint` custom View.

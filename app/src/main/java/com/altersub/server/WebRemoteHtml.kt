@@ -1,8 +1,9 @@
 package com.altersub.server
 
 /**
- * The phone remote: one self-contained page (no external fonts, scripts or images, so it loads instantly
- * from the TV and works without internet). Server data is only ever inserted with textContent (KI-8).
+ * The phone remote: one self-contained page. Nothing loads from the internet: the UI font (AlterSub Sans,
+ * from Google Sans Flex) is served by the TV itself and cached by the browser. Server data is only ever
+ * inserted with textContent (KI-8).
  */
 object WebRemoteHtml {
 
@@ -19,6 +20,10 @@ object WebRemoteHtml {
 <meta name="color-scheme" content="dark">
 <title>AlterSub Remote</title>
 <style>
+    /* swap: text shows at once in the system font, then switches when the font arrives (cached for a week) */
+    @font-face { font-family: "AlterSub Sans"; font-weight: 400; font-display: swap; src: url("/fonts/app-sans-regular.ttf") format("truetype"); }
+    @font-face { font-family: "AlterSub Sans"; font-weight: 500; font-display: swap; src: url("/fonts/app-sans-medium.ttf") format("truetype"); }
+    @font-face { font-family: "AlterSub Sans"; font-weight: 700; font-display: swap; src: url("/fonts/app-sans-bold.ttf") format("truetype"); }
     :root {
         --bg: #0E0E11; --surface: #18181C; --surface-2: #222228; --line: #2C2C33;
         --text: #F4F4F6; --muted: #9A9AA5; --accent: #FFE500; --ink: #141414;
@@ -28,7 +33,7 @@ object WebRemoteHtml {
     html { -webkit-text-size-adjust: 100%; }
     body {
         background: var(--bg); color: var(--text);
-        font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        font: 15px/1.4 "AlterSub Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
         padding: 12px 16px 40px; -webkit-tap-highlight-color: transparent;
     }
     main, .stack { display: grid; gap: 14px; }
@@ -36,9 +41,9 @@ object WebRemoteHtml {
     [hidden] { display: none !important; }
 
     header { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px; }
-    .brand { display: flex; align-items: center; gap: 8px; font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+    .brand { display: flex; align-items: center; gap: 8px; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
     .brand::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
-    .pill { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 600; }
+    .pill { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 500; }
     .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
     .pill.ok { color: var(--ok); }
     .pill.bad { color: var(--danger); }
@@ -52,7 +57,7 @@ object WebRemoteHtml {
     button, .button {
         display: inline-flex; align-items: center; justify-content: center; gap: 6px;
         min-height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 12px;
-        background: var(--surface-2); color: var(--text); font: inherit; font-weight: 600;
+        background: var(--surface-2); color: var(--text); font: inherit; font-weight: 500;
         cursor: pointer; touch-action: manipulation; transition: transform 0.08s, background 0.15s;
     }
     button:active, .button:active { transform: scale(0.96); background: var(--line); }
@@ -73,7 +78,7 @@ object WebRemoteHtml {
 
     .pin { width: 100%; margin-top: 14px; font-size: 28px; letter-spacing: 0.4em; text-align: center; font-variant-numeric: tabular-nums; }
 
-    .offset { color: var(--accent); font-size: 44px; font-weight: 800; letter-spacing: -0.02em; text-align: center; font-variant-numeric: tabular-nums; }
+    .offset { color: var(--accent); font-size: 44px; font-weight: 700; letter-spacing: -0.02em; text-align: center; font-variant-numeric: tabular-nums; }
     .hint { margin: 2px 0 12px; color: var(--muted); font-size: 13px; text-align: center; }
     .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
     .clock-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
@@ -93,7 +98,7 @@ object WebRemoteHtml {
     .track.active { border-color: var(--accent); background: #2A2610; }
     .track.active .radio { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 3px #2A2610; }
     .track-text { flex: 1; min-width: 0; }
-    .track-name { font-weight: 600; overflow-wrap: anywhere; }
+    .track-name { font-weight: 500; overflow-wrap: anywhere; }
     .track-meta { margin-top: 2px; color: var(--muted); font-size: 12px; }
     .empty { padding: 14px; color: var(--muted); font-size: 13px; text-align: center; }
     .upload { width: 100%; margin-top: 10px; border-style: dashed; color: var(--muted); }
@@ -109,6 +114,7 @@ object WebRemoteHtml {
     .swatches { display: flex; gap: 12px; }
     .swatch { width: 34px; height: 34px; min-height: 0; padding: 0; border: 2px solid rgba(255, 255, 255, 0.15); border-radius: 50%; }
     .swatch.active { outline: 2px solid var(--text); outline-offset: 3px; }
+    .danger { color: var(--danger); }
 
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -196,6 +202,12 @@ object WebRemoteHtml {
                 <div class="swatches" id="styleColors"></div>
             </div>
             <button class="ghost wide" onclick="setStyle('reset=1')">Reset appearance</button>
+        </section>
+
+        <section class="card">
+            <div class="eyebrow">This phone</div>
+            <p class="muted" style="margin-top: 0;">Paired with the TV. Only one phone can be paired at a time; unpair this one to use another.</p>
+            <button class="ghost wide danger" onclick="unpairThisPhone()">Unpair this phone</button>
         </section>
     </div>
 </main>
@@ -468,6 +480,14 @@ object WebRemoteHtml {
         await api('/api/upload', { body: formData });
         input.value = ''; // Lets the same file be picked again
         setTimeout(fetchStatus, 500);
+    }
+
+    async function unpairThisPhone() {
+        if (!confirm('Unpair this phone? You can pair it again by scanning the QR code on the TV.')) return;
+        await api('/api/unpair');
+        saveToken('');
+        lastTracksKey = '';
+        showPairing('This phone is unpaired. Scan the QR code on the TV to pair it again.');
     }
 
     async function start() {

@@ -4,14 +4,15 @@ import com.altersub.server.RemoteAuth.PairResult
 import com.altersub.server.RemoteAuth.Pairing
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.SecureRandom
 
 class RemoteAuthTest {
 
-    private var savedTokens = emptyList<String>()
-    private val auth = RemoteAuth(onTokensChanged = { savedTokens = it })
+    private var savedToken: String? = null
+    private val auth = RemoteAuth(onTokenChanged = { savedToken = it })
 
     private fun RemoteAuth.pin() = (pairing.value as Pairing.Open).pin
 
@@ -43,7 +44,7 @@ class RemoteAuthTest {
         auth.closePairing()
 
         assertEquals(PairResult.NotOpen, auth.pair(pin))
-        assertTrue(savedTokens.isEmpty())
+        assertNull(savedToken)
     }
 
     @Test
@@ -57,7 +58,7 @@ class RemoteAuthTest {
         assertFalse(auth.isAuthorized(result.token.dropLast(1)))
         assertFalse(auth.isAuthorized(""))
         assertFalse(auth.isAuthorized(null))
-        assertEquals(1, auth.pairedCount.value)
+        assertTrue(auth.isPaired.value)
     }
 
     @Test
@@ -79,36 +80,53 @@ class RemoteAuthTest {
     }
 
     @Test
-    fun testTokensArePersistedAndRestored() {
-        val token = auth.pairOnce()
-        assertEquals(listOf(token), savedTokens)
+    fun testASecondPhoneIsRefusedWhileOneIsPaired() {
+        val first = auth.pairOnce()
+        auth.openPairing()
 
-        val restarted = RemoteAuth(savedTokens = savedTokens)
+        // Even with the right PIN, and without using up the wrong-PIN allowance
+        assertEquals(PairResult.AlreadyPaired, auth.pair(auth.pin()))
+        repeat(RemoteAuth.MAX_FAILED_ATTEMPTS + 1) {
+            assertEquals(PairResult.AlreadyPaired, auth.pair(wrongPin(auth.pin())))
+        }
+        assertTrue(auth.isAuthorized(first))
+    }
+
+    @Test
+    fun testTheTvCanUnpairThePhone() {
+        val token = auth.pairOnce()
+
+        auth.unpair()
+
+        assertFalse(auth.isAuthorized(token))
+        assertFalse(auth.isPaired.value)
+        assertNull(savedToken)
+        auth.openPairing()
+        assertTrue(auth.pair(auth.pin()) is PairResult.Paired)
+    }
+
+    @Test
+    fun testOnlyThePairedPhoneCanUnpairItself() {
+        val token = auth.pairOnce()
+
+        assertFalse(auth.revoke("someone-else"))
+        assertFalse(auth.revoke(null))
+        assertTrue(auth.isAuthorized(token))
+
+        assertTrue(auth.revoke(token))
+        assertFalse(auth.isAuthorized(token))
+        assertFalse(auth.isPaired.value)
+    }
+
+    @Test
+    fun testTokenIsPersistedAndRestored() {
+        val token = auth.pairOnce()
+        assertEquals(token, savedToken)
+
+        val restarted = RemoteAuth(savedToken = savedToken)
 
         assertTrue(restarted.isAuthorized(token))
-        assertEquals(1, restarted.pairedCount.value)
-    }
-
-    @Test
-    fun testOldestPhoneIsDroppedPastTheLimit() {
-        val tokens = List(RemoteAuth.MAX_TOKENS + 1) { auth.pairOnce() }
-
-        assertFalse(auth.isAuthorized(tokens.first()))
-        assertTrue(tokens.drop(1).all(auth::isAuthorized))
-        assertEquals(RemoteAuth.MAX_TOKENS, auth.pairedCount.value)
-        assertEquals(tokens.drop(1), savedTokens)
-    }
-
-    @Test
-    fun testUnpairAllRevokesEveryToken() {
-        val first = auth.pairOnce()
-        val second = auth.pairOnce()
-
-        auth.unpairAll()
-
-        assertFalse(auth.isAuthorized(first))
-        assertFalse(auth.isAuthorized(second))
-        assertEquals(0, auth.pairedCount.value)
-        assertTrue(savedTokens.isEmpty())
+        assertTrue(restarted.isPaired.value)
+        assertFalse(RemoteAuth(savedToken = "").isPaired.value)
     }
 }

@@ -11,11 +11,13 @@ import java.security.SecureRandom
  * that enters it gets a long random token, which every /api call must then carry. Too many wrong PINs lock
  * pairing until the screen is reopened, so the PIN can't be brute-forced from elsewhere on the network.
  *
- * Paired tokens are handed to [onTokensChanged] so they can be persisted; phones stay paired across restarts.
+ * Only one phone can be paired at a time. While it is, further pairing is refused, so nobody who glimpses
+ * the TV can silently take over; the TV or the paired phone itself must unpair first. The token is handed
+ * to [onTokenChanged] so it can be persisted, and the phone stays paired across restarts.
  */
 class RemoteAuth(
-    savedTokens: List<String> = emptyList(),
-    private val onTokensChanged: (List<String>) -> Unit = {},
+    savedToken: String? = null,
+    private val onTokenChanged: (String?) -> Unit = {},
     private val random: SecureRandom = SecureRandom()
 ) {
 
@@ -32,17 +34,18 @@ class RemoteAuth(
         data class WrongPin(val attemptsLeft: Int) : PairResult
         object NotOpen : PairResult
         object Locked : PairResult
+        /** Another phone is already paired; it must be unpaired first. */
+        object AlreadyPaired : PairResult
     }
 
     private val _pairing = MutableStateFlow<Pairing>(Pairing.Closed)
     val pairing: StateFlow<Pairing> = _pairing.asStateFlow()
 
-    // Oldest first, so the oldest phone is dropped once MAX_TOKENS is reached
-    private val tokens = ArrayList(savedTokens.takeLast(MAX_TOKENS))
+    private var token: String? = savedToken?.takeIf { it.isNotEmpty() }
     private var failedAttempts = 0
 
-    private val _pairedCount = MutableStateFlow(tokens.size)
-    val pairedCount: StateFlow<Int> = _pairedCount.asStateFlow()
+    private val _isPaired = MutableStateFlow(token != null)
+    val isPaired: StateFlow<Boolean> = _isPaired.asStateFlow()
 
     /** Shows a fresh PIN; called whenever the TV setup screen comes to the foreground. */
     @Synchronized
@@ -64,6 +67,8 @@ class RemoteAuth(
             Pairing.Closed -> return PairResult.NotOpen
             Pairing.Locked -> return PairResult.Locked
         }
+        // Checked before the PIN, so guesses against a paired TV don't count towards (or reveal) anything
+        if (token != null) return PairResult.AlreadyPaired
 
         if (!constantTimeEquals(pin.trim(), open.pin)) {
             failedAttempts++
@@ -74,29 +79,33 @@ class RemoteAuth(
             return PairResult.WrongPin(MAX_FAILED_ATTEMPTS - failedAttempts)
         }
 
-        val token = newToken()
-        tokens += token
-        while (tokens.size > MAX_TOKENS) tokens.removeAt(0)
-        tokensChanged()
-        return PairResult.Paired(token)
+        val newToken = newToken()
+        setToken(newToken)
+        return PairResult.Paired(newToken)
     }
 
     @Synchronized
-    fun isAuthorized(token: String?): Boolean {
-        if (token.isNullOrEmpty()) return false
-        return tokens.any { constantTimeEquals(token, it) }
+    fun isAuthorized(candidate: String?): Boolean {
+        val current = token ?: return false
+        return !candidate.isNullOrEmpty() && constantTimeEquals(candidate, current)
     }
 
-    /** Forgets every paired phone; each must enter a PIN again. */
+    /** Unpairs from the TV side, e.g. when the paired phone is lost or its browser data was cleared. */
     @Synchronized
-    fun unpairAll() {
-        tokens.clear()
-        tokensChanged()
+    fun unpair() = setToken(null)
+
+    /** Unpairs from the phone side; only the phone holding [candidate] can do this. */
+    @Synchronized
+    fun revoke(candidate: String?): Boolean {
+        if (!isAuthorized(candidate)) return false
+        setToken(null)
+        return true
     }
 
-    private fun tokensChanged() {
-        _pairedCount.value = tokens.size
-        onTokensChanged(tokens.toList())
+    private fun setToken(value: String?) {
+        token = value
+        _isPaired.value = value != null
+        onTokenChanged(value)
     }
 
     private fun newToken(): String {
@@ -110,7 +119,6 @@ class RemoteAuth(
     companion object {
         const val PIN_LENGTH = 6
         const val MAX_FAILED_ATTEMPTS = 5
-        const val MAX_TOKENS = 8
         private const val TOKEN_BYTES = 16
 
         /** Request header the remote page sends its token in (NanoHTTPD lower-cases header names). */
