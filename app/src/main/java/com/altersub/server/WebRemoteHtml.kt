@@ -101,9 +101,12 @@ object WebRemoteHtml {
     .upload { width: 100%; background: transparent; color: var(--muted); margin-top: 18px; border: 1px dashed var(--line); }
     .sync-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px;
         padding: 16px 18px 16px 20px; border-radius: var(--radius); background: var(--surface); }
-    .sync-status strong { display: block; font-size: 20px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .sync-status strong { display: block; margin-top: 4px; font-size: 30px; line-height: 1.1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
     .sync-status.adjusted strong { color: var(--accent); }
-    .sync-status span { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+    .sync-status .hint { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
+    .sync-status button { flex: none; min-width: 84px; }
+    .tip { display: flex; gap: 10px; margin-bottom: 12px; padding: 14px 16px; border-radius: 18px; background: #1D2130; color: #C8D0EA; font-size: 13px; }
+    .tip svg { flex: none; width: 18px; height: 18px; margin-top: 1px; }
     .card + .card { margin-top: 12px; }
     .card-title { font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
     .card-title small { margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: #343223; color: var(--accent); font-size: 11px; font-weight: 500; vertical-align: 2px; }
@@ -239,16 +242,28 @@ object WebRemoteHtml {
                 <button class="primary wide" onclick="focusSearch()">Find subtitles</button>
             </div>
             <div id="timingControls" hidden>
-                <div class="section-head"><h2>Line up the subtitles</h2><p class="muted">If the words don’t match the voices on your TV, fix it here. It’s saved for this subtitle file.</p></div>
-                <div class="sync-status" id="syncStatus" role="status" aria-atomic="true">
-                    <div><strong id="offsetText">Original timing</strong><span id="offsetHint">Not adjusted</span></div>
-                    <button class="text-button" id="resetOffset" onclick="adjustOffset(-offsetValue)">Reset</button>
+                <div class="section-head"><h2>Line up the subtitles</h2><p class="muted">If the words don’t match the voices on your TV, adjust them here.</p></div>
+                <div class="sync-status" id="syncStatus">
+                    <div role="status" aria-atomic="true"><span class="eyebrow">Subtitle timing</span><strong id="offsetText">0 s</strong><span class="hint" id="offsetHint">Original timing</span></div>
+                    <button id="resetOffset" onclick="adjustOffset(-offsetValue)" aria-label="Reset subtitle timing to 0 seconds">Reset</button>
                 </div>
+                <p class="tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8.5v.5"/></svg><span>Easiest near the start of a film or episode: the first time someone speaks is simple to match with the first subtitle. Once set, the timing is saved for this subtitle file.</span></p>
+
+                <section class="surface card" aria-labelledby="fineTitle">
+                    <h3 class="card-title" id="fineTitle">Adjust timing</h3>
+                    <p class="card-text">Watch someone speak and compare it with when their subtitle appears.</p>
+                    <div class="nudge">
+                        <button id="earlierButton" onclick="nudge(1)"><b id="earlierStep">−0.5 s</b><small>Words appear late</small></button>
+                        <button id="laterButton" onclick="nudge(-1)"><b id="laterStep">+0.5 s</b><small>Words appear early</small></button>
+                    </div>
+                    <div class="step-label"><span>Each tap moves them by</span></div>
+                    <div class="steps" id="stepGroup" role="radiogroup" aria-label="Each tap moves the subtitles by"></div>
+                </section>
 
                 <section class="surface card" aria-labelledby="syncTitle">
                     <div id="syncIdle">
-                        <h3 class="card-title" id="syncTitle">Sync to a line<small>Easiest</small></h3>
-                        <p class="card-text">Tap the moment someone starts speaking on your TV. Then pick the line they said, and the subtitles move to match.</p>
+                        <h3 class="card-title" id="syncTitle">Sync to a line</h3>
+                        <p class="card-text">If you understand the language being spoken: tap the moment someone starts speaking, then pick the line they said. The subtitles move to match.</p>
                         <button class="primary hear" id="hearButton" onclick="markLine()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 10v4m4-8v12m4-15v18m4-14v10m4-7v4"/></svg>I hear a line now</button>
                     </div>
                     <div id="syncPick" hidden>
@@ -257,16 +272,6 @@ object WebRemoteHtml {
                         <div class="lines" id="lineList"></div>
                         <button class="ghost wide" onclick="closePick()">Cancel</button>
                     </div>
-                </section>
-
-                <section class="surface card" aria-labelledby="fineTitle">
-                    <h3 class="card-title" id="fineTitle">Fine-tune</h3>
-                    <div class="nudge">
-                        <button id="earlierButton" onclick="nudge(1)"><b>‹ Earlier</b><small>Words are late</small></button>
-                        <button id="laterButton" onclick="nudge(-1)"><b>Later ›</b><small>Words are early</small></button>
-                    </div>
-                    <div class="step-label"><span>Each tap moves them by</span></div>
-                    <div class="steps" id="stepGroup" role="radiogroup" aria-label="Each tap moves the subtitles by"></div>
                 </section>
 
                 <details class="manual">
@@ -392,9 +397,11 @@ object WebRemoteHtml {
         return (await request(path, options)) !== null;
     }
 
-    // "0.25", "1.5", "12.3": two decimals only where they matter
-    function secondsLabel(ms) { const s = Math.abs(ms) / 1000; return s.toFixed(s >= 10 ? 1 : 2).replace(/\.?0+$/, ''); }
-    function timingLabel(ms) { return ms ? secondsLabel(ms) + ' s ' + (ms > 0 ? 'earlier' : 'later') : 'Original timing'; }
+    // "0.25", "1.5", "12.3": two decimals only under a second
+    function secondsLabel(ms) { const s = Math.abs(ms) / 1000; return s.toFixed(s >= 1 ? 1 : 2).replace(/\.?0+$/, ''); }
+    // Timing is shown as a delay: + shows subtitles later, − sooner, matching the +/− buttons. (The clock's offset
+    // has the opposite sign: it is added to the cue time, so a positive offset shows them sooner.)
+    function timingLabel(offsetMs) { return offsetMs ? (offsetMs < 0 ? '+' : '−') + secondsLabel(offsetMs) + ' s' : '0 s'; }
 
     function showPairing(message) {
         // The page itself came from the TV, so it is reachable; it just won't take commands until paired
@@ -506,9 +513,9 @@ object WebRemoteHtml {
         warning.hidden = !data.overlayError;
         offsetValue = data.offsetMs || 0;
         setText('offsetText', timingLabel(offsetValue));
-        setText('offsetHint', offsetValue ? 'Than the original file · saved' : 'Not adjusted');
+        setText('offsetHint', offsetValue ? 'Saved for this subtitle file' : 'Original timing');
         document.getElementById('syncStatus').classList.toggle('adjusted', offsetValue !== 0);
-        document.getElementById('resetOffset').hidden = offsetValue === 0;
+        document.getElementById('resetOffset').disabled = offsetValue === 0;
         activeTrackId = data.activeTrackId || '';
         // The lines being chosen from belong to the file that was showing
         if (syncPick && syncPick.trackId !== activeTrackId) closePick();
@@ -643,7 +650,7 @@ object WebRemoteHtml {
 
             const text = document.createElement('div');
             text.className = 'track-text';
-            const timing = r.offsetMs ? ' · ' + timingLabel(r.offsetMs) : '';
+            const timing = r.offsetMs ? ' · timing ' + timingLabel(r.offsetMs) : '';
             text.append(textElement('div', 'track-name', r.title), textElement('div', 'track-meta', r.track + timing));
             item.append(text, textElement('span', 'track-action', 'Use again'));
             list.appendChild(item);
@@ -704,9 +711,11 @@ object WebRemoteHtml {
             button.setAttribute('aria-checked', String(on));
             button.tabIndex = on ? 0 : -1;
         }
-        const step = secondsLabel(stepMs) + (stepMs === 1000 ? ' second ' : ' seconds ');
-        document.getElementById('earlierButton').setAttribute('aria-label', 'Show subtitles ' + step + 'earlier. Use when the words are late.');
-        document.getElementById('laterButton').setAttribute('aria-label', 'Show subtitles ' + step + 'later. Use when the words are early.');
+        setText('earlierStep', '−' + secondsLabel(stepMs) + ' s');
+        setText('laterStep', '+' + secondsLabel(stepMs) + ' s');
+        const step = secondsLabel(stepMs) + (stepMs === 1000 ? ' second' : ' seconds');
+        document.getElementById('earlierButton').setAttribute('aria-label', 'Minus ' + step + ': show subtitles sooner. Use when the words appear late.');
+        document.getElementById('laterButton').setAttribute('aria-label', 'Plus ' + step + ': show subtitles later. Use when the words appear early.');
     }
 
     // Sync to a line: the TV saves where the subtitles were when the user heard someone speak, then the user
@@ -789,7 +798,7 @@ object WebRemoteHtml {
         closePick();
         const delta = data.deltaMs || 0;
         if (Math.abs(delta) < 100) notify('Already in sync with that line.');
-        else notify('Synced. Subtitles moved ' + timingLabel(delta) + '.', false, { label: 'Undo', run: () => adjustOffset(-delta) });
+        else notify('Synced. Subtitle timing is now ' + timingLabel(data.offsetMs || 0) + '.', false, { label: 'Undo', run: () => adjustOffset(-delta) });
         await fetchStatus();
     }
 
