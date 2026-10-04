@@ -2,8 +2,10 @@ package com.altersub.server
 
 import com.altersub.core.clock.SubtitleClock
 import com.altersub.core.model.ContentMetadata
+import com.altersub.core.model.SubtitleCue
 import com.altersub.core.model.SubtitleStyle
 import com.altersub.core.model.SubtitleTrack
+import com.altersub.core.parser.SubtitleIndex
 import com.altersub.core.session.PickMemory
 import com.altersub.core.session.SearchState
 import com.altersub.core.session.TitleMatch
@@ -41,6 +43,7 @@ class WebRemoteServerTest {
         override val overlayRunning = MutableStateFlow(true)
         override val overlayError = MutableStateFlow<String?>(null)
         override val subtitleStyle = MutableStateFlow(SubtitleStyle())
+        override val subtitleIndex = MutableStateFlow<SubtitleIndex?>(null)
 
         val searches = mutableListOf<String>()
         val chosen = mutableListOf<String>()
@@ -162,6 +165,40 @@ class WebRemoteServerTest {
         assertEquals("Overlay blocked", status.getString("overlayError"))
         assertEquals("yellow", status.getJSONObject("style").getString("color"))
         assertEquals("#FFE500", status.getJSONObject("style").getJSONObject("palette").getString("yellow"))
+    }
+
+    @Test
+    fun testSyncToALineMovesTheSubtitlesSoThatLineStartsAtTheMark() {
+        post("/api/sync/mark").use { assertEquals(409, it.code) } // Nothing to sync before subtitles are loaded
+
+        // A line every 4 s; the subtitles are at 50 s when the user hears someone speak
+        controller.subtitleIndex.value = SubtitleIndex((0 until 80).map { SubtitleCue(it, it * 4_000L, it * 4_000L + 2_000L, "Line " + it) })
+        controller.clock.seekTo(50_000L)
+
+        val mark = post("/api/sync/mark").json()
+        val markMs = mark.getLong("markMs")
+        assertEquals(50_000L - WebRemoteServer.REACTION_MS, markMs)
+        val lines = mark.getJSONArray("lines")
+        assertEquals(20, lines.length()) // 10 lines either side of the mark
+        assertEquals("Line 3", lines.getJSONObject(0).getString("text"))
+        assertEquals(12_000L, lines.getJSONObject(0).getLong("startMs"))
+
+        // They heard "Line 10", which starts at 40 s: the subtitles run ahead, so they move later by the gap
+        val synced = post("/api/sync/line?markMs=" + markMs + "&startMs=40000").json()
+        assertEquals(40_000L - markMs, synced.getLong("deltaMs"))
+        assertEquals(40_000L - markMs, controller.clock.userOffsetMs.value)
+        assertEquals(1, controller.syncAdjustments) // Remembered for the title like any other timing change
+        post("/api/sync/line?markMs=abc&startMs=1").use { assertEquals(400, it.code) }
+        post("/api/sync/line?markMs=5&startMs=-1").use { assertEquals(400, it.code) }
+
+        // More lines on request, capped
+        val earlier = get("/api/lines?aroundMs=11999&before=5&after=0").json().getJSONArray("lines")
+        assertEquals(listOf("Line 0", "Line 1", "Line 2"), (0 until earlier.length()).map { earlier.getJSONObject(it).getString("text") })
+        assertEquals(50, get("/api/lines?aroundMs=0&before=0&after=999").json().getJSONArray("lines").length())
+        get("/api/lines?aroundMs=soon").use { assertEquals(400, it.code) }
+
+        post("/api/sync/mark", token = null).use { assertEquals(401, it.code) }
+        get("/api/lines?aroundMs=0&after=5", token = "not-a-token").use { assertEquals(401, it.code) }
     }
 
     @Test

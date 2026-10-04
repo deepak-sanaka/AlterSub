@@ -4,6 +4,7 @@ import com.altersub.core.clock.SubtitleClock
 import com.altersub.core.model.ContentMetadata
 import com.altersub.core.model.SubtitleStyle
 import com.altersub.core.model.SubtitleTrack
+import com.altersub.core.parser.SubtitleIndex
 import com.altersub.core.session.PickMemory
 import com.altersub.core.session.SearchState
 import com.altersub.core.session.TitleMatch
@@ -22,6 +23,9 @@ interface RemoteController {
     val overlayRunning: StateFlow<Boolean>
     val overlayError: StateFlow<String?>
     val subtitleStyle: StateFlow<SubtitleStyle>
+
+    /** The active track's cues, or null when no subtitles are loaded. */
+    val subtitleIndex: StateFlow<SubtitleIndex?>
 
     /** Films the current title could be (to choose when ambiguous, or to correct a wrong guess). */
     val matches: StateFlow<List<TitleMatch>>

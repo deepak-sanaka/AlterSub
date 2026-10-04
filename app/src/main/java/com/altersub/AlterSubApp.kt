@@ -57,7 +57,7 @@ class AlterSubApp : Application(), RemoteController {
     override val currentContent: StateFlow<ContentMetadata?> get() = session.currentContent
     override val availableTracks: StateFlow<List<SubtitleTrack>> get() = session.availableTracks
     override val activeTrack: StateFlow<SubtitleTrack?> get() = session.activeTrack
-    val subtitleIndex: StateFlow<SubtitleIndex?> get() = session.subtitleIndex
+    override val subtitleIndex: StateFlow<SubtitleIndex?> get() = session.subtitleIndex
     val acceptsScreenDetection: Boolean get() = session.acceptsScreenDetection
     private val netflixSpeech = NetflixSpeechDetector(SystemClock::elapsedRealtime)
 

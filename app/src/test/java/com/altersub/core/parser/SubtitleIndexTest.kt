@@ -15,6 +15,21 @@ class SubtitleIndexTest {
     )
 
     @Test
+    fun testCuesAroundAMoment() {
+        val cues = (0 until 6).map { SubtitleCue(it, it * 4_000L, it * 4_000L + 2_000L, "Line " + it) }
+        val many = SubtitleIndex(cues)
+        fun around(timeMs: Long, before: Int, after: Int) = many.cuesAround(timeMs, before, after).map { it.text }
+
+        // "Before" includes the cue starting exactly then; "after" is what hasn't started yet
+        assertEquals(listOf("Line 1", "Line 2", "Line 3", "Line 4"), around(8_000L, 2, 2))
+        assertEquals(listOf("Line 0", "Line 1"), around(5_000L, 5, 0))
+        assertEquals(listOf("Line 0", "Line 1"), around(-1L, 3, 2))
+        assertEquals(listOf("Line 4", "Line 5"), around(60_000L, 2, 9))
+        assertEquals(emptyList<String>(), around(8_000L, 0, 0))
+        assertEquals(emptyList<String>(), SubtitleIndex(emptyList()).cuesAround(1_000L, 3, 3))
+    }
+
+    @Test
     fun testSleepsExactlyUntilNextCueStarts() {
         assertEquals(500L, index.getTimeUntilNextChange(500L))
         assertEquals(1999L, index.getTimeUntilNextChange(4001L)) // In the gap between cues

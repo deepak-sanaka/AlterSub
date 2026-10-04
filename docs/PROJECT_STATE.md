@@ -76,7 +76,7 @@ AlterSub/
 │   │   └── test/java/com/altersub/
 │   │       ├── core/clock/                          # SubtitleClockTest (position extrapolation), TrackOffsetsTest
 │   │       ├── core/model/SubtitleStyleTest.kt      # Style clamping and colour validation
-│   │       ├── core/parser/                         # SrtParserTest (encodings, VTT, malformed SRT), SubtitleIndexTest
+│   │       ├── core/parser/                         # SrtParserTest (encodings, VTT, malformed SRT), SubtitleIndexTest (incl. lines around a moment)
 │   │       ├── core/session/                        # SubtitleSessionTest (races, remembered picks), PickMemoryTest
 │   │       ├── detection/                           # DetectionArbiterTest, TitleSanitizerTest, ScreenTitlePickerTest, AppPackageFilterTest
 │   │       ├── provider/                            # MockWebServer tests per provider, HttpAwaitTest, CompositeSubtitleProviderTest,
@@ -216,16 +216,23 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
   * **One phone at a time.** While a phone is paired, `/api/pair` returns 409 (even with the right PIN, without counting as a wrong guess), and the TV hides the QR/PIN and shows "Phone paired" with the address. Unpair from the TV (**Unpair phone**) or from the phone's **TV connection** disclosure (**Disconnect this phone**, `POST /api/unpair`). The token persists across restarts (`SharedPreferences`; older builds' multi-phone lists keep only the newest).
   * The TV's "Phone remote" card has a status chip (Waiting for phone / Paired / Locked / Off), the QR code with three short scan steps, the address in large type (`192.168.x.x:8080`, no `http://` needed) with the PIN, and **Turn off / Turn on** (persisted).
 * **Phone page**: single self-contained page; nothing loads from the internet. The UI font is served by the TV (`GET /fonts/app-sans-{regular,medium,bold}.ttf`, public, cached for a week, `font-display: swap`). Three bottom tabs show one task at a time: **Subtitles** (search, catalog choices, selected file, other files, uploads and recent picks), **Timing**, and **Style**. The shared header shows the current title and subtitle state, plus TV connection status and a reconnect notice. Failed commands display the server's error instead of implying success; stale status responses cannot replace newer state.
-  * **Timing** puts **Show later** (subtitles appear too early) and **Show earlier** (subtitles appear too late) side by side. Each direction has its own signed 0.25 s / 1 s / 5 s circular buttons, increasing in diameter from 52 to 64 to 80 px. The buttons mirror each other in a downward-curving arc, with the smallest at the outer top and largest at the inner bottom. Feedback uses “earlier” / “later”, and announces offset changes to screen readers. Because the offset is added to the cue clock, **Show later** sends a negative delta, and **Show earlier** sends a positive delta. The timer, subtitle pause/resume and “Set time” are under **Manual timing controls**, explicitly distinguished from video playback controls.
+  * **Timing** has three parts, top to bottom:
+    * A status line in plain words ("Original timing", or "12.3 s later" / "0.5 s earlier" than the original file, saved), with **Reset**.
+    * **Sync to a line** (the main way): the user taps **I hear a line now** the moment someone starts speaking on the TV. The TV saves where the subtitles were at that moment (`/api/sync/mark`, minus 300 ms for reaction time) and returns the 10 lines either side, with a "Subtitles were here" divider; more lines load in either direction. Picking the line that was heard moves the subtitles so it starts at the saved moment (`/api/sync/line`), with **Undo** in the confirmation. No early/late reasoning or step sizes are needed, and since the moment is saved, there's no rush to find the line.
+    * **Fine-tune**: **‹ Earlier** ("Words are late") and **Later ›** ("Words are early"), one step per tap, with a step picker (0.1 / 0.5 / 1 / 5 s, default 0.5 s, remembered on the phone). Because the offset is added to the cue clock, Earlier sends a positive delta and Later a negative one.
+    * The timer, subtitle pause/resume and "Set time" stay under **Manual timing controls**, distinguished from video playback.
   * **Style** has an approximate live text preview and controls for size, vertical position, and colour swatches from the server's `palette`. Native buttons, keyboard tab navigation, focus indicators and generous touch targets support phone and keyboard use. Dynamic titles and filenames still use `textContent` exclusively.
   * **Redesign validation (2026-10-04)**: local browser checks against sample API data covered PIN errors/pairing, empty and missing-result states, same-name title choices, file upload, offset direction/step/reset, manual seek/pause, and appearance updates. Narrow layouts were checked at 320 px and 390 px without horizontal overflow. JavaScript syntax, all 156 offline unit tests, debug packaging and the shrunk release build passed; one live-network test was skipped. The redesigned page has not yet been tested against the TV.
-  * **Timing follow-up (2026-10-04)**: verified all six signed circular adjustment buttons and reset against isolated sample data, including advancing past zero. At 320 px there is no horizontal overflow; circle diameters are 52 / 64 / 80 px, with at least 11 px between circles. JavaScript syntax, the same offline unit tests and debug packaging passed again.
+  * **Timing redesign (2026-10-04)**: checked in a browser at 375 px against a mock TV with a running clock and sample dialogue: marking a line, the divider landing mid-list, loading earlier lines down to the first one, syncing to an earlier line (subtitles moved later by the gap), Undo, the fine-tune steps in both directions and Reset, with no horizontal overflow. Not yet tried on the TV.
 * **Endpoints**:
   * `GET /`: Serves complete, zero-dependency dark-mode HTML/CSS/JS remote.
   * `POST /api/pair?pin=<pin>`: Exchanges the TV's PIN for a token (403 wrong PIN or screen closed, 409 another phone is paired, 429 locked).
   * `POST /api/unpair`: The paired phone unpairs itself.
   * `GET /api/status`: Returns JSON with active movie title, active subtitle track, +/- ms offset, clock position (`positionMs`, excluding offset), play state, and track candidates, plus `overlayRunning` and `overlayError`.
   * `POST /api/offset?delta=<ms>`: Fine-tunes subtitle sync delay.
+  * `POST /api/sync/mark`: Saves the subtitle time the user heard a line at (`markMs`, 300 ms before the request arrives) and returns the 10 lines on either side (`startMs`, `text`). 409 when no subtitles are loaded.
+  * `GET /api/lines?aroundMs=<ms>&before=<n>&after=<n>`: More lines around a time, at most 50 each way.
+  * `POST /api/sync/line?markMs=<ms>&startMs=<ms>`: Moves the subtitles by `startMs − markMs`, so the heard line starts at the mark; returns `deltaMs` (for Undo) and the new `offsetMs`. Remembered for the title like any offset.
   * `POST /api/seek?positionMs=<ms>`: Sets the clock to the player's on-screen time (for apps that don't publish a MediaSession position). The remote accepts `41:23` / `1:05:10` input.
   * `POST /api/style?sizeStep=<±n>&positionStep=<±n>&color=<name>` (or `reset=1`): Adjusts subtitle size, vertical position and colour; values are clamped server-side.
   * `POST /api/toggle-play`: Manually forces clock play/pause.
@@ -254,7 +261,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
 
 ### 5.1 Automated Unit Tests
 * **Test Runner**: Gradle JUnit 4 on the JVM, with the real `org.json` artifact on the test classpath (Android's stub would throw).
-* **Status (2026-10-04)**: 141 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
+* **Status (2026-10-04)**: 159 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
 * **Test Suites**:
   * [`DetectionArbiterTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/DetectionArbiterTest.kt): MediaSession outranks scraping; a manual choice holds until the session title changes; scraping resumes after sessions end. (Passes)
   * [`SubtitleClockTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/clock/SubtitleClockTest.kt): MediaSession position extrapolation (elapsed time × speed, paused, missing/future snapshot, zero speed). (Passes)
@@ -443,7 +450,6 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 | KI-11 | Medium | Platform | Full-screen overlay window: touch blocking on phones, extra compositing on TVs |
 | KI-12 | Medium | Platform | Overlay foreground service never stops once started |
 | KI-18 | Medium | Timing | Multiple active media sessions all drive the same clock |
-| KI-27 | Medium | Timing | Subtitle files can be offset from the streaming cut; finding the offset is fiddly |
 | KI-28 | Medium | Platform | Low-RAM TVs need a one-time ADB grant before subtitles follow pause and seek |
 | KI-31 | Medium | Detection | Apps outside the allowlist aren't followed at all, and adding one needs a code change |
 | KI-10 | Low | Distribution | Google Play is likely to reject the accessibility service |
@@ -524,16 +530,11 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 * **Implication**: The clock can jump between two unrelated positions, and content may flip between titles.
 * **Fix direction**: Follow only the controller that is `STATE_PLAYING` (or the most recently active one), using a per-controller callback that knows its package.
 
-#### KI-27 · Subtitle offset vs. the streaming cut — *Confirmed on a real TV (partly addressed)*
-* **Where**: `TrackOffsets`, phone page Timing card.
-* **Issue**: A subtitle file for the right cut ran 10.75 s ahead of Netflix's version (a different opening). Finding that offset takes repeated −/+ taps, and "Set time" by hand is imprecise. The offset and track are now remembered per title (§3.2), so this is needed once per title rather than after every restart.
-* **Fix direction**: "Tap when you hear this line" sync, so the offset is found in one tap.
-
 #### KI-28 · Play-state following needs an ADB grant on low-RAM TVs — *Confirmed on a real TV*
 * **Where**: `MediaSessionPoller`, setup screen step 3.
 * **Issue**: Android blocks notification-listener access on low-RAM devices; the fallback needs `pm grant com.altersub android.permission.DUMP`, which only ADB can do. Without it, subtitles don't follow pause or seek.
 * **Implication**: Ordinary users of 1–2 GB TVs can't get automatic sync without a computer.
-* **Fix direction**: Keep the setup screen's ADB instructions; consider a small guided "grant over Wi-Fi" flow, or tap-to-sync as the no-ADB fallback (KI-27).
+* **Fix direction**: Keep the setup screen's ADB instructions; consider a small guided "grant over Wi-Fi" flow. Without the grant, the phone's **Sync to a line** re-aligns subtitles in one tap after a pause or seek.
 
 ### 7.4 Low Severity
 
@@ -552,11 +553,11 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 ## 8. Current Project State & Next Steps
 
 * **Current Status**: Prototype / alpha.
-  * **Works today**: builds and 141 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload (named after the file), track selection, per-track offset, "Set time", subtitle style, remembered picks restored after restarts or from a one-tap Recent list, and a "which film?" choice when several films share the searched title (or a year in the search).
+  * **Works today**: builds and 159 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload (named after the file), track selection, per-track offset, one-tap sync to a line the user hears, "Set time", subtitle style, remembered picks restored after restarts or from a one-tap Recent list, and a "which film?" choice when several films share the searched title (or a year in the search).
   * **Open issues**: §7.1. Only Netflix and Hotstar have been tried on a real TV (KI-1); the new optional Netflix spoken-title route needs full device validation (KI-26). Screen-title detection is tuned on tests and the emulator's Leanback sample, not yet on real apps' screens.
 * **Artifact Location**: release `app/build/outputs/apk/release/app-release-unsigned.apk` (~1.7 MB, R8-shrunk; needs a release signing config before distribution), debug `app/build/outputs/apk/debug/app-debug.apk` (~9.7 MB from a clean build, unshrunk; incremental debug builds leave dead space and can be much larger).
 * **Recommended Next Steps** (in order):
-  1. **Real-TV follow-up (KI-1, KI-26, KI-27)**: test Prime/Disney+/YouTube, a non-low-RAM TV, and the remembered-pick restore with Netflix; next-episode offer for series; tap-to-sync.
+  1. **Real-TV follow-up (KI-1, KI-26)**: test Prime/Disney+/YouTube, a non-low-RAM TV, the remembered-pick restore with Netflix, and Sync to a line against real playback; next-episode offer for series.
   2. **Sourcing resilience (KI-2)**: propagate the IMDb ID so YTS works; add OpenSubtitles API-key entry.
   3. **Detection accuracy (KI-4, KI-6, KI-31)**: sanitizer fixes with real-title tests, session-title checks, adding apps from the phone. Tune `ScreenTitlePicker` on real apps' screens (`AlterSubDiag` logs each scan's texts, hints and scores).
   4. **Web remote hardening (KI-9)**: upload size limits and validation.

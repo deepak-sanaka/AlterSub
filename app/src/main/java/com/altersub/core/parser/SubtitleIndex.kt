@@ -76,6 +76,15 @@ class SubtitleIndex(val cues: List<SubtitleCue>) {
         return untilChange
     }
 
+    /**
+     * Up to [before] cues starting at or before [timeMs] and up to [after] cues starting after it, in start order:
+     * the lines around a moment, for the phone to pick the one the user just heard.
+     */
+    fun cuesAround(timeMs: Long, before: Int, after: Int): List<SubtitleCue> {
+        val firstAfter = lastStartingAtOrBefore(timeMs) + 1
+        return cues.subList(maxOf(0, firstAfter - before.coerceAtLeast(0)), minOf(cues.size, firstAfter + after.coerceAtLeast(0)))
+    }
+
     /** Index of the last cue starting at or before [timeMs], or -1 if none has started yet. */
     private fun lastStartingAtOrBefore(timeMs: Long): Int {
         var low = 0

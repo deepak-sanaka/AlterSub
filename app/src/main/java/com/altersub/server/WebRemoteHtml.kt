@@ -99,26 +99,34 @@ object WebRemoteHtml {
     .empty h3 { font-size: 20px; letter-spacing: -.03em; }
     .empty p { max-width: 270px; margin: 8px auto 0; color: var(--muted); font-size: 14px; }
     .upload { width: 100%; background: transparent; color: var(--muted); margin-top: 18px; border: 1px dashed var(--line); }
-    .offset { text-align: center; margin: 2px 0 22px; }
-    .offset strong { display: block; font-size: 32px; letter-spacing: -.04em; color: var(--accent); }
-    .offset span { font-size: 12px; color: var(--muted); }
-    .timing-directions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .timing-direction { min-width: 0; text-align: center; }
-    .timing-direction h3 { font-size: 17px; font-weight: 700; }
-    .timing-direction p { color: var(--muted); font-size: 12px; min-height: 2.9em; margin: 4px 0 14px; }
-    .timing-adjustments { position: relative; height: 235px; }
-    .timing-adjustments button { position: absolute; width: var(--diameter); height: var(--diameter);
-        min-height: var(--diameter); padding: 0; border-radius: 50%; background: #36363F; color: var(--accent);
-        font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
-    .timing-adjustments .small { --diameter: 52px; top: 0; font-size: 12px; }
-    .timing-adjustments .medium { --diameter: 64px; top: 82px; }
-    .timing-adjustments .large { --diameter: 80px; top: 155px; font-size: 20px; }
-    .timing-later .small { left: 0; }
-    .timing-later .medium { left: 18%; }
-    .timing-later .large { right: 0; }
-    .timing-earlier .small { right: 0; }
-    .timing-earlier .medium { right: 18%; }
-    .timing-earlier .large { left: 0; }
+    .sync-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px;
+        padding: 16px 18px 16px 20px; border-radius: var(--radius); background: var(--surface); }
+    .sync-status strong { display: block; font-size: 20px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .sync-status.adjusted strong { color: var(--accent); }
+    .sync-status span { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+    .card + .card { margin-top: 12px; }
+    .card-title { font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+    .card-title small { margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: #343223; color: var(--accent); font-size: 11px; font-weight: 500; vertical-align: 2px; }
+    .card-text { margin-top: 6px; color: var(--muted); font-size: 14px; }
+    .hear { width: 100%; min-height: 64px; margin-top: 18px; border-radius: 20px; font-size: 17px; font-weight: 700; }
+    .hear svg { width: 24px; height: 24px; flex: none; }
+    .lines { position: relative; display: grid; gap: 6px; max-height: 50vh; margin: 14px -8px 0; padding: 2px 8px;
+        overflow-y: auto; overscroll-behavior: contain; }
+    .line { display: block; width: 100%; min-height: 50px; padding: 12px 14px; border-radius: 14px; text-align: left;
+        font-size: 15px; font-weight: 400; line-height: 1.35; white-space: pre-line; overflow-wrap: anywhere; }
+    .mark { display: flex; align-items: center; gap: 10px; padding: 6px 2px; color: var(--accent); font-size: 12px; font-weight: 500; }
+    .mark::before, .mark::after { content: ""; flex: 1; height: 1px; background: currentColor; opacity: .45; }
+    .more { min-height: 40px; background: transparent; color: var(--muted); font-size: 13px; }
+    .nudge { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+    .nudge button { flex-direction: column; gap: 2px; min-height: 80px; border-radius: 18px; }
+    .nudge b { font-size: 18px; letter-spacing: -.01em; }
+    .nudge small { color: var(--muted); font-size: 12px; font-weight: 400; }
+    .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 12px; padding: 4px;
+        border-radius: 14px; background: var(--bg); }
+    .steps button { min-height: 40px; padding: 0; border-radius: 10px; background: transparent; color: var(--muted);
+        font-size: 13px; font-variant-numeric: tabular-nums; }
+    .steps button[aria-checked=true] { background: var(--surface-2); color: var(--text); }
+    .step-label { display: flex; justify-content: space-between; margin-top: 16px; color: var(--muted); font-size: 12px; }
     .clock-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 18px 0; }
     .clock b { font-size: 18px; font-variant-numeric: tabular-nums; }
     .clock span { display: block; font-size: 12px; color: var(--muted); }
@@ -147,6 +155,8 @@ object WebRemoteHtml {
     .toast { position: fixed; z-index: 20; left: 50%; transform: translateX(-50%); bottom: calc(100px + env(safe-area-inset-bottom));
         width: calc(100% - 48px); max-width: 456px; border-radius: 16px; padding: 14px 18px; background: #34343E; color: var(--text); font-size: 14px; }
     .toast.error { background: #49241E; color: var(--danger); }
+    .toast:not([hidden]) { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .toast-action { flex: none; min-height: 36px; padding: 6px 4px 6px 12px; background: transparent; color: var(--accent); font-weight: 700; }
     .connection-settings { margin-top: 28px; }
     @media (max-width: 360px) { .brand { font-size: 17px; } h1 { font-size: 27px; } .surface { padding: 18px; } .stepper button { padding: 10px; } }
 </style>
@@ -229,31 +239,36 @@ object WebRemoteHtml {
                 <button class="primary wide" onclick="focusSearch()">Find subtitles</button>
             </div>
             <div id="timingControls" hidden>
-                <div class="section-head"><h2>Make the subtitles line up with the scene</h2><p class="muted">Watch your TV and tap whichever describes the subtitles.</p></div>
-                <div class="surface">
-                    <div class="offset" role="status" aria-atomic="true"><strong id="offsetText">Original timing</strong><span id="offsetHint">No adjustment yet</span></div>
-                    <div class="timing-directions">
-                        <section class="timing-direction timing-later" aria-labelledby="laterTitle">
-                            <h3 id="laterTitle">Show later</h3>
-                            <p>If subtitles appear too early</p>
-                            <div class="timing-adjustments">
-                                <button class="small" onclick="adjustOffset(-250)" aria-label="Show subtitles 0.25 seconds later">−0.25s</button>
-                                <button class="medium" onclick="adjustOffset(-1000)" aria-label="Show subtitles 1 second later">−1s</button>
-                                <button class="large" onclick="adjustOffset(-5000)" aria-label="Show subtitles 5 seconds later">−5s</button>
-                            </div>
-                        </section>
-                        <section class="timing-direction timing-earlier" aria-labelledby="earlierTitle">
-                            <h3 id="earlierTitle">Show earlier</h3>
-                            <p>If subtitles appear too late</p>
-                            <div class="timing-adjustments">
-                                <button class="small" onclick="adjustOffset(250)" aria-label="Show subtitles 0.25 seconds earlier">+0.25s</button>
-                                <button class="medium" onclick="adjustOffset(1000)" aria-label="Show subtitles 1 second earlier">+1s</button>
-                                <button class="large" onclick="adjustOffset(5000)" aria-label="Show subtitles 5 seconds earlier">+5s</button>
-                            </div>
-                        </section>
-                    </div>
-                    <button class="ghost wide" id="resetOffset" onclick="adjustOffset(-offsetValue)">Reset timing</button>
+                <div class="section-head"><h2>Line up the subtitles</h2><p class="muted">If the words don’t match the voices on your TV, fix it here. It’s saved for this subtitle file.</p></div>
+                <div class="sync-status" id="syncStatus" role="status" aria-atomic="true">
+                    <div><strong id="offsetText">Original timing</strong><span id="offsetHint">Not adjusted</span></div>
+                    <button class="text-button" id="resetOffset" onclick="adjustOffset(-offsetValue)">Reset</button>
                 </div>
+
+                <section class="surface card" aria-labelledby="syncTitle">
+                    <div id="syncIdle">
+                        <h3 class="card-title" id="syncTitle">Sync to a line<small>Easiest</small></h3>
+                        <p class="card-text">Tap the moment someone starts speaking on your TV. Then pick the line they said, and the subtitles move to match.</p>
+                        <button class="primary hear" id="hearButton" onclick="markLine()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 10v4m4-8v12m4-15v18m4-14v10m4-7v4"/></svg>I hear a line now</button>
+                    </div>
+                    <div id="syncPick" hidden>
+                        <h3 class="card-title">Which line did you hear?</h3>
+                        <p class="card-text">No rush: the moment you tapped is saved.</p>
+                        <div class="lines" id="lineList"></div>
+                        <button class="ghost wide" onclick="closePick()">Cancel</button>
+                    </div>
+                </section>
+
+                <section class="surface card" aria-labelledby="fineTitle">
+                    <h3 class="card-title" id="fineTitle">Fine-tune</h3>
+                    <div class="nudge">
+                        <button id="earlierButton" onclick="nudge(1)"><b>‹ Earlier</b><small>Words are late</small></button>
+                        <button id="laterButton" onclick="nudge(-1)"><b>Later ›</b><small>Words are early</small></button>
+                    </div>
+                    <div class="step-label"><span>Each tap moves them by</span></div>
+                    <div class="steps" id="stepGroup" role="radiogroup" aria-label="Each tap moves the subtitles by"></div>
+                </section>
+
                 <details class="manual">
                     <summary>Manual timing controls</summary>
                     <p class="muted">Timing usually follows your TV. Use these if it doesn’t. Your TV remote controls the video; these controls adjust subtitles only.</p>
@@ -292,13 +307,14 @@ object WebRemoteHtml {
     <button id="timingTab" role="tab" aria-controls="timingPanel" aria-selected="false" tabindex="-1" onclick="showTab('timing')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Timing</button>
     <button id="styleTab" role="tab" aria-controls="stylePanel" aria-selected="false" tabindex="-1" onclick="showTab('style')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m4 19 6-14 6 14M6 14h8m2 5 3-8 3 8m-5-3h4"/></svg>Style</button>
 </nav>
-<div class="toast" id="actionNotice" role="status" hidden></div>
+<div class="toast" id="actionNotice" role="status" hidden><span id="noticeText"></span><button class="toast-action" id="noticeAction" type="button" hidden></button></div>
 
 <script>
     let offsetValue = 0;
     let isPlaying = false;
     let lastTracksKey = '';
     let lastActiveId = null;
+    let activeTrackId = '';
     let statusSequence = 0;
     let noticeTimeout;
 
@@ -342,28 +358,42 @@ object WebRemoteHtml {
         document.getElementById('searchInput').focus();
     }
 
-    function notify(message, error) {
+    // action: optional { label, run } shown as a button in the message, e.g. Undo
+    function notify(message, error, action) {
         clearTimeout(noticeTimeout);
         const notice = document.getElementById('actionNotice');
-        notice.textContent = message;
+        setText('noticeText', message);
         notice.className = error ? 'toast error' : 'toast';
+        const button = document.getElementById('noticeAction');
+        button.hidden = !action;
+        button.onclick = null;
+        if (action) {
+            button.textContent = action.label;
+            button.onclick = () => { notice.hidden = true; action.run(); };
+        }
         notice.hidden = false;
-        noticeTimeout = setTimeout(() => { notice.hidden = true; }, error ? 7000 : 3500);
+        noticeTimeout = setTimeout(() => { notice.hidden = true; }, error ? 7000 : action ? 8000 : 3500);
+    }
+
+    // Sends a command and returns its JSON reply, or null after telling the user what went wrong
+    async function request(path, options) {
+        const res = await api(path, options);
+        if (!res) return null;
+        let data = {};
+        try { data = await res.json(); } catch (e) {}
+        if (!res.ok) {
+            notify(data.error || 'That didn’t work. Please try again.', true);
+            return null;
+        }
+        return data;
     }
 
     async function command(path, options) {
-        const res = await api(path, options);
-        if (!res) return false;
-        if (!res.ok) {
-            let error = 'That didn’t work. Please try again.';
-            try { error = (await res.json()).error || error; } catch (e) {}
-            notify(error, true);
-            return false;
-        }
-        return true;
+        return (await request(path, options)) !== null;
     }
 
-    function secondsLabel(ms) { return (Math.abs(ms) / 1000).toFixed(2).replace(/\.?0+$/, ''); }
+    // "0.25", "1.5", "12.3": two decimals only where they matter
+    function secondsLabel(ms) { const s = Math.abs(ms) / 1000; return s.toFixed(s >= 10 ? 1 : 2).replace(/\.?0+$/, ''); }
     function timingLabel(ms) { return ms ? secondsLabel(ms) + ' s ' + (ms > 0 ? 'earlier' : 'later') : 'Original timing'; }
 
     function showPairing(message) {
@@ -476,8 +506,12 @@ object WebRemoteHtml {
         warning.hidden = !data.overlayError;
         offsetValue = data.offsetMs || 0;
         setText('offsetText', timingLabel(offsetValue));
-        setText('offsetHint', offsetValue ? 'Saved for this subtitle file' : 'No adjustment yet');
-        document.getElementById('resetOffset').disabled = offsetValue === 0;
+        setText('offsetHint', offsetValue ? 'Than the original file · saved' : 'Not adjusted');
+        document.getElementById('syncStatus').classList.toggle('adjusted', offsetValue !== 0);
+        document.getElementById('resetOffset').hidden = offsetValue === 0;
+        activeTrackId = data.activeTrackId || '';
+        // The lines being chosen from belong to the file that was showing
+        if (syncPick && syncPick.trackId !== activeTrackId) closePick();
         isPlaying = !!data.isPlaying;
         setText('playPauseBtn', isPlaying ? 'Pause subtitles' : 'Resume subtitles');
         setText('clockText', formatTime(data.positionMs || 0));
@@ -632,6 +666,140 @@ object WebRemoteHtml {
         if (await command('/api/offset?delta=' + delta)) await fetchStatus();
     }
 
+    // Fine-tune: one step per tap, in the direction the user picks; the step size is remembered on this phone
+    const STEPS = [100, 500, 1000, 5000];
+    let stepMs = 500;
+    try { const saved = Number(localStorage.getItem('altersubStep')); if (STEPS.includes(saved)) stepMs = saved; } catch (e) {}
+
+    function nudge(direction) { adjustOffset(direction * stepMs); }
+
+    function setStep(ms) {
+        stepMs = ms;
+        try { localStorage.setItem('altersubStep', String(ms)); } catch (e) {}
+        renderSteps();
+    }
+
+    function renderSteps() {
+        const group = document.getElementById('stepGroup');
+        if (group.childElementCount === 0) {
+            for (const ms of STEPS) {
+                const button = textElement('button', '', secondsLabel(ms) + ' s');
+                button.type = 'button';
+                button.setAttribute('role', 'radio');
+                button.dataset.ms = String(ms);
+                button.addEventListener('click', () => setStep(ms));
+                group.appendChild(button);
+            }
+            group.addEventListener('keydown', event => {
+                const move = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[event.key];
+                if (!move) return;
+                event.preventDefault();
+                const next = STEPS[(STEPS.indexOf(stepMs) + move + STEPS.length) % STEPS.length];
+                setStep(next);
+                group.querySelector('[data-ms="' + next + '"]').focus();
+            });
+        }
+        for (const button of group.children) {
+            const on = Number(button.dataset.ms) === stepMs;
+            button.setAttribute('aria-checked', String(on));
+            button.tabIndex = on ? 0 : -1;
+        }
+        const step = secondsLabel(stepMs) + (stepMs === 1000 ? ' second ' : ' seconds ');
+        document.getElementById('earlierButton').setAttribute('aria-label', 'Show subtitles ' + step + 'earlier. Use when the words are late.');
+        document.getElementById('laterButton').setAttribute('aria-label', 'Show subtitles ' + step + 'later. Use when the words are early.');
+    }
+
+    // Sync to a line: the TV saves where the subtitles were when the user heard someone speak, then the user
+    // picks which line it was, and the TV moves the subtitles so that line starts at that moment
+    let syncPick = null; // { markMs, lines, trackId } while the user is choosing
+
+    async function markLine() {
+        const button = document.getElementById('hearButton');
+        button.disabled = true;
+        const data = await request('/api/sync/mark');
+        button.disabled = false;
+        if (!data) return;
+        if (!data.lines || data.lines.length === 0) {
+            notify('This subtitle file has no lines near this point.', true);
+            return;
+        }
+        syncPick = { markMs: data.markMs, lines: data.lines, trackId: activeTrackId };
+        document.getElementById('syncIdle').hidden = true;
+        document.getElementById('syncPick').hidden = false;
+        renderLines();
+        const list = document.getElementById('lineList');
+        list.scrollTop = document.getElementById('syncMark').offsetTop - list.clientHeight / 2;
+    }
+
+    // Lines come from the subtitle file (anyone's upload), so they are only ever set as text
+    function renderLines() {
+        const list = document.getElementById('lineList');
+        list.textContent = '';
+        list.appendChild(moreLinesButton('Earlier lines', -1));
+        let marked = false;
+        const addMark = () => {
+            const mark = textElement('div', 'mark', 'Subtitles were here');
+            mark.id = 'syncMark';
+            list.appendChild(mark);
+            marked = true;
+        };
+        for (const line of syncPick.lines) {
+            if (!marked && line.startMs > syncPick.markMs) addMark();
+            const item = textElement('button', 'line', line.text);
+            item.type = 'button';
+            item.addEventListener('click', () => syncToLine(line));
+            list.appendChild(item);
+        }
+        if (!marked) addMark();
+        list.appendChild(moreLinesButton('Later lines', 1));
+    }
+
+    function moreLinesButton(label, direction) {
+        const button = textElement('button', 'more', label);
+        button.type = 'button';
+        button.addEventListener('click', () => loadMoreLines(direction, button));
+        return button;
+    }
+
+    async function loadMoreLines(direction, button) {
+        const lines = syncPick.lines;
+        const edge = direction < 0 ? lines[0] : lines[lines.length - 1];
+        const query = direction < 0 ? 'aroundMs=' + (edge.startMs - 1) + '&before=10&after=0' : 'aroundMs=' + edge.startMs + '&before=0&after=10';
+        const data = await request('/api/lines?' + query, { method: 'GET' });
+        if (!data || !syncPick) return;
+        const fresh = (data.lines || []).filter(line => direction < 0 ? line.startMs < edge.startMs : line.startMs > edge.startMs);
+        if (fresh.length === 0) {
+            button.textContent = direction < 0 ? 'This is the first line' : 'This is the last line';
+            button.disabled = true;
+            return;
+        }
+        const list = document.getElementById('lineList');
+        const height = list.scrollHeight;
+        const top = list.scrollTop;
+        syncPick.lines = direction < 0 ? fresh.concat(lines) : lines.concat(fresh);
+        renderLines();
+        // Keep the lines the user was looking at in place
+        list.scrollTop = direction < 0 ? top + list.scrollHeight - height : top;
+    }
+
+    async function syncToLine(line) {
+        if (!syncPick) return;
+        const data = await request('/api/sync/line?markMs=' + syncPick.markMs + '&startMs=' + line.startMs);
+        if (!data) return;
+        closePick();
+        const delta = data.deltaMs || 0;
+        if (Math.abs(delta) < 100) notify('Already in sync with that line.');
+        else notify('Synced. Subtitles moved ' + timingLabel(delta) + '.', false, { label: 'Undo', run: () => adjustOffset(-delta) });
+        await fetchStatus();
+    }
+
+    function closePick() {
+        syncPick = null;
+        document.getElementById('syncPick').hidden = true;
+        document.getElementById('syncIdle').hidden = false;
+        document.getElementById('lineList').textContent = '';
+    }
+
 
 
     // Accepts "83", "41:23" or "1:05:10" (seconds may be fractional); returns ms or null
@@ -782,6 +950,7 @@ object WebRemoteHtml {
         showTab(tabs[next]);
         document.getElementById(tabs[next] + 'Tab').focus();
     });
+    renderSteps();
     setInterval(fetchStatus, 2000);
     start();
 </script>

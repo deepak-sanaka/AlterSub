@@ -30,7 +30,7 @@ Optimized specifically for **Android TV 9 (Pie)** and lower-spec hardware, while
    * Open `http://<your-tv-ip>:8080` from any phone on the same Wi-Fi:
      * View live detected movie/series name.
      * Use **Subtitles** to search, choose a file, upload an `.srt` or `.vtt`, or restore a recent pick.
-     * Use **Timing** to **Show later** or **Show earlier**, with separate one-tap 0.25 s, 1 s, and 5 s buttons for each direction.
+     * Use **Timing** to line subtitles up with the voices: tap **I hear a line now** when someone speaks, then pick the line they said. **Earlier** / **Later** fine-tune it.
      * Use **Style** to preview and change text size, position, and colour.
 
 ---
@@ -82,6 +82,6 @@ To disable this option, choose your original preferred speech engine and turn of
 2. Note the IP address shown on screen (e.g., `http://192.168.1.50:8080`).
 3. Scan the TV's QR code to connect automatically, or open that address and enter its 6-digit PIN.
 4. On **Subtitles**, search for the film or show and choose the correct title if several match. You can also upload your own subtitle file. The selected file is marked **Showing on your TV**.
-5. If subtitles appear too early or late, open **Timing** and tap the matching button. **Style** changes their appearance with an approximate live preview. Manual timing controls adjust the subtitle timer; use the TV remote for video playback.
+5. If subtitles appear too early or late, open **Timing**, tap **I hear a line now** the moment someone starts speaking, and pick the line you heard. **Earlier** / **Later** fine-tune it. **Style** changes their appearance with an approximate live preview. Manual timing controls adjust the subtitle timer; use the TV remote for video playback.
 
 The optional Netflix titles setup above can supply the title when playback starts from a supported English description page.

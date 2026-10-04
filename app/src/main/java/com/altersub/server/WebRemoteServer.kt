@@ -1,6 +1,7 @@
 package com.altersub.server
 
 import android.util.Log
+import com.altersub.core.model.SubtitleCue
 import com.altersub.core.model.SubtitleStyle
 import fi.iki.elonen.NanoHTTPD
 import java.io.ByteArrayInputStream
@@ -70,6 +71,45 @@ class WebRemoteServer(
                     controller.clock.adjustOffset(delta)
                     controller.onSyncAdjusted()
                     jsonResponse(JSONObject().put("success", true).put("offsetMs", controller.clock.userOffsetMs.value))
+                }
+
+                // Sync to a line: the phone marks the moment the user hears someone speak, then says which line it was
+                uri == "/api/sync/mark" && method == Method.POST -> {
+                    val index = controller.subtitleIndex.value
+                    if (index == null) {
+                        noSubtitles()
+                    } else {
+                        val markMs = (controller.clock.getCurrentTimeMs() - REACTION_MS).coerceAtLeast(0L)
+                        jsonResponse(JSONObject().put("markMs", markMs).put("lines", linesJson(index.cuesAround(markMs, LINES_EACH_SIDE, LINES_EACH_SIDE))))
+                    }
+                }
+
+                uri == "/api/lines" && method == Method.GET -> {
+                    val index = controller.subtitleIndex.value
+                    val aroundMs = session.parms["aroundMs"]?.toLongOrNull()
+                    when {
+                        index == null -> noSubtitles()
+                        aroundMs == null -> jsonResponse(JSONObject().put("error", "aroundMs must be a number"), Response.Status.BAD_REQUEST)
+                        else -> {
+                            val before = (session.parms["before"]?.toIntOrNull() ?: 0).coerceIn(0, MAX_LINES)
+                            val after = (session.parms["after"]?.toIntOrNull() ?: 0).coerceIn(0, MAX_LINES)
+                            jsonResponse(JSONObject().put("lines", linesJson(index.cuesAround(aroundMs, before, after))))
+                        }
+                    }
+                }
+
+                uri == "/api/sync/line" && method == Method.POST -> {
+                    val markMs = session.parms["markMs"]?.toLongOrNull()
+                    val startMs = session.parms["startMs"]?.toLongOrNull()
+                    if (markMs == null || startMs == null || markMs < 0 || startMs < 0) {
+                        jsonResponse(JSONObject().put("error", "markMs and startMs must be non-negative numbers"), Response.Status.BAD_REQUEST)
+                    } else {
+                        // The line the user heard at the mark should start at the mark: move the subtitles by the gap
+                        val deltaMs = startMs - markMs
+                        controller.clock.adjustOffset(deltaMs)
+                        controller.onSyncAdjusted()
+                        jsonResponse(JSONObject().put("success", true).put("deltaMs", deltaMs).put("offsetMs", controller.clock.userOffsetMs.value))
+                    }
                 }
 
                 uri == "/api/seek" && method == Method.POST -> {
@@ -298,6 +338,14 @@ class WebRemoteServer(
         return name.ifEmpty { "Uploaded Subtitle" }
     }
 
+    private fun noSubtitles(): Response =
+        jsonResponse(JSONObject().put("error", "Choose subtitles first, then sync them."), Response.Status.CONFLICT)
+
+    // Line text comes from the subtitle file; the page renders it with textContent (KI-8)
+    private fun linesJson(cues: List<SubtitleCue>) = JSONArray().apply {
+        for (cue in cues) put(JSONObject().put("startMs", cue.startTimeMs).put("text", cue.text))
+    }
+
     private fun jsonResponse(
         json: JSONObject,
         status: Response.IStatus = Response.Status.OK
@@ -310,6 +358,14 @@ class WebRemoteServer(
         private const val FONT_PATH = "/fonts/"
         private val FONT_FILE = Regex("app-sans-(regular|medium|bold)\\.ttf")
         const val DEFAULT_PORT = 8080
+
+        /**
+         * People tap a beat after a line starts (reaction time, plus the request reaching the TV), so the mark is
+         * set this much earlier; otherwise every synced line would show a little late.
+         */
+        const val REACTION_MS = 300L
+        private const val LINES_EACH_SIDE = 10
+        private const val MAX_LINES = 50
 
         /** 8080 is a common default (Kodi's web interface uses it), so a few neighbours are tried before giving up. */
         val PORTS = (DEFAULT_PORT..DEFAULT_PORT + 9).toList()
