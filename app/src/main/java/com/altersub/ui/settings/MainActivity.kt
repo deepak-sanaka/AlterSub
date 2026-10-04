@@ -12,11 +12,13 @@ import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.provider.Settings
 import android.text.format.Formatter
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDialog
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
@@ -28,6 +30,7 @@ import com.altersub.R
 import com.altersub.core.model.SubtitleCue
 import com.altersub.core.parser.SubtitleIndex
 import com.altersub.databinding.ActivityMainBinding
+import com.altersub.databinding.DialogNetflixHelpBinding
 import com.altersub.server.RemoteAuth
 import com.altersub.server.WebRemoteServer
 import com.altersub.service.AccessibilityInspectorService
@@ -190,6 +193,7 @@ class MainActivity : AppCompatActivity() {
             SpeechEngineSettings.setMuteNetflix(this, checked)
             updatePermissionStatuses()
         }
+        binding.btnNetflixHelp.setOnClickListener { showNetflixHelp() }
         binding.btnNetflixSpeechSetup.setOnClickListener {
             if (SpeechEngineSettings.prepare(this) == null) {
                 AlertDialog.Builder(this).setTitle("Netflix titles")
@@ -199,7 +203,7 @@ class MainActivity : AppCompatActivity() {
                 AlertDialog.Builder(this).setTitle("Netflix titles")
                     .setMessage("Enable ‘AlterSub Netflix titles’ in Accessibility, then choose ‘AlterSub (Netflix titles)’ " +
                         "as the preferred engine in Text-to-speech settings. TalkBack can stay off. Netflix announcements are muted " +
-                        "by default; uncheck ‘Mute Netflix announcements’ to hear them. Movie audio and other apps’ speech continue normally.\n\n" +
+                        "by default; uncheck ‘Mute announcements’ to hear them. Movie audio and other apps’ speech continue normally.\n\n" +
                         "Open a Netflix description page, wait briefly, then press Play to find subtitles automatically. English announcements " +
                         "are supported; starting playback directly from a card or autoplay may need phone search.")
                     .setPositiveButton("Accessibility") { _, _ ->
@@ -252,6 +256,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Why Netflix titles exists, how it recognises a title, and what to do in Netflix. Closed by its button or Back. */
+    private fun showNetflixHelp() {
+        val help = DialogNetflixHelpBinding.inflate(layoutInflater)
+        AppFont.apply(help.root)
+        val dialog = AppCompatDialog(this, R.style.Theme_AlterSub_Dialog)
+        dialog.setContentView(help.root)
+        help.btnHelpOk.setOnClickListener { dialog.dismiss() }
+        dialog.show()
+        val margin = resources.getDimensionPixelSize(R.dimen.action_width) / 2
+        val width = minOf(resources.getDimensionPixelSize(R.dimen.help_dialog_width), resources.displayMetrics.widthPixels - margin)
+        dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
+        help.btnHelpOk.requestFocus()
+    }
+
     /**
      * Many Android TV builds (including the Android TV emulator images) ship without these special-access
      * screens, and launching a missing one crashed the app. Fall back to explaining the ADB grant instead.
@@ -295,19 +313,25 @@ class MainActivity : AppCompatActivity() {
         val netflixEnabled = Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1 &&
             Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
             .orEmpty().split(':').any { ComponentName.unflattenFromString(it)?.flattenToString() == netflixComponent }
+        // One line each: the mute state shows on its own checkbox
+        val netflixReady = netflixEnabled && SpeechEngineSettings.isSelected(this) &&
+            SpeechEngineSettings.backend(this) != null && listenerEnabled
         binding.tvNetflixSpeechStatus.text = when {
-            !netflixEnabled -> "Optional. Enable Netflix titles in Accessibility, then select AlterSub as the speech engine."
-            !SpeechEngineSettings.isSelected(this) -> "Choose AlterSub (Netflix titles) as the preferred speech engine."
+            !netflixEnabled -> "Lets AlterSub recognise what you play on Netflix."
+            !SpeechEngineSettings.isSelected(this) -> "Next: choose AlterSub (Netflix titles) as the speech engine."
             SpeechEngineSettings.backend(this) == null -> "Keep a voice engine installed for other apps’ speech."
-            !listenerEnabled -> "Enable playback sync below so AlterSub can confirm when the title starts playing."
-            else -> (if (SpeechEngineSettings.muteNetflix(this)) "Ready. Netflix announcements are muted. " else "Ready. Netflix announcements are audible. ") +
-                "Open an English description page, then press Play."
+            !listenerEnabled -> "Also set up Follow play and pause, above."
+            else -> "Ready. Open a title’s page in Netflix, then press Play."
         }
+        // Optional, so never the amber "to do" mark: done when ready, neutral otherwise
+        binding.ivNetflixSpeechStatus.setImageResource(if (netflixReady) R.drawable.ic_status_done else R.drawable.ic_status_off)
         val canOverlay = Settings.canDrawOverlays(this)
         val inspectorEnabled = isAccessibilityInspectorEnabled()
         // Either route works: the notification listener, or (low-RAM TVs) polling with the DUMP permission
 
         showStep(binding.ivOverlayStatus, binding.btnOverlayPermission, canOverlay)
+        // Once subtitles may be drawn, the first card offers to show some
+        binding.btnTestSubtitle.isVisible = canOverlay
         showStep(binding.ivAccessibilityStatus, binding.btnAccessibilityPermission, inspectorEnabled)
         showStep(binding.ivNotificationStatus, binding.btnNotificationPermission, listenerEnabled)
 
@@ -322,9 +346,8 @@ class MainActivity : AppCompatActivity() {
 
         binding.tvNextStep.text = when {
             !canOverlay -> "Start with the first step: without it, AlterSub can't show subtitles."
-            remaining > 0 -> "Almost there. Finish the remaining steps so AlterSub works on its own."
-            else -> "You're all set. Start a show in your streaming app and subtitles appear on their own. " +
-                "Use your phone to switch tracks or fix the timing."
+            remaining > 0 -> "Almost there. Finish the required steps so AlterSub works on its own."
+            else -> "You're all set. Play something, then use your phone to pick or time subtitles."
         }
 
         // Finished steps hide their buttons, so make sure D-pad focus lands on something visible:

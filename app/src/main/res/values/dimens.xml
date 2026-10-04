@@ -1,0 +1,11 @@
+<resources>
+    <!-- Every action button on the TV screen has this one size, so buttons line up down the right edge of the cards -->
+    <dimen name="action_width">132dp</dimen>
+    <dimen name="action_height">44dp</dimen>
+    <dimen name="help_button_size">40dp</dimen>
+    <dimen name="help_dialog_width">880dp</dimen>
+
+    <!-- Both columns start with a label row of this height and the same gap, so their first cards line up -->
+    <dimen name="column_label_height">24dp</dimen>
+    <dimen name="card_gap">8dp</dimen>
+</resources>

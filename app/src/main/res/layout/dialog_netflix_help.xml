@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "?" beside Netflix titles' Set up: why the option exists, how it works, and what to do in Netflix.
+     Two columns so it fits a 960x540dp TV screen; scrolls only with very large font sizes. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_card"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:orientation="vertical"
+        android:padding="28dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="How Netflix titles work"
+            android:textColor="@color/text_main"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            style="@style/Widget.AlterSub.DialogBody"
+            android:text="Netflix doesn’t tell other apps what’s playing. This optional setup lets AlterSub learn the title."
+            android:textColor="@color/text_secondary" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:baselineAligned="false"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/Widget.AlterSub.DialogHeading"
+                    android:text="Why it’s needed" />
+
+                <TextView
+                    style="@style/Widget.AlterSub.DialogBody"
+                    android:text="Netflix keeps the name of what you’re watching to itself, and blocks screen reading and screenshots. Without this, you’d search for every film on your phone." />
+
+                <TextView
+                    style="@style/Widget.AlterSub.DialogHeading"
+                    android:layout_marginTop="18dp"
+                    android:text="How it works" />
+
+                <TextView
+                    style="@style/Widget.AlterSub.DialogBody"
+                    android:text="Netflix can speak its menus for people who use a screen reader. With this setup, it sends those words to AlterSub as if AlterSub were a voice. AlterSub keeps them silent while Mute announcements is ticked, and passes every other app’s speech straight to your usual voice without reading it. It never sees your screen or hears the film." />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="32dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/Widget.AlterSub.DialogHeading"
+                    android:text="How the title is recognised" />
+
+                <TextView
+                    style="@style/Widget.AlterSub.DialogBody"
+                    android:text="When a film’s or show’s page opens, Netflix says “On the details screen for” and its name. When you press Play and the video starts, AlterSub finds that name in the film catalogue and loads subtitles." />
+
+                <TextView
+                    style="@style/Widget.AlterSub.DialogHeading"
+                    android:layout_marginTop="18dp"
+                    android:text="What to do in Netflix" />
+
+                <TextView
+                    style="@style/Widget.AlterSub.DialogBody"
+                    android:text="1.  Select a film or show to open its page, the one with Play and the description.\n2.  Wait a moment for the page to load.\n3.  Press Play within two minutes." />
+
+                <TextView
+                    style="@style/Widget.AlterSub.DialogBody"
+                    android:layout_marginTop="10dp"
+                    android:text="Works when Netflix is in English, with Follow play and pause set up. Playing straight from a row, autoplay and the next episode aren’t recognised yet: search on your phone instead."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnHelpOk"
+            style="@style/Widget.AlterSub.TvButton.Action.Primary"
+            android:layout_gravity="end"
+            android:layout_marginStart="0dp"
+            android:layout_marginTop="20dp"
+            android:text="Ok, understood" />
+    </LinearLayout>
+</ScrollView>

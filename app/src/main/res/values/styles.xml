@@ -6,6 +6,13 @@
         <item name="colorAccent">@color/accent</item>
     </style>
 
+    <!-- Our own dialogs draw their card themselves: no title bar or frame, just the dimmed screen behind -->
+    <style name="Theme.AlterSub.Dialog" parent="Theme.AppCompat.Dialog">
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimAmount">0.75</item>
+    </style>
+
     <!-- D-pad friendly button: high-contrast focused state plus a slight scale-up -->
     <style name="Widget.AlterSub.TvButton" parent="Widget.AppCompat.Button">
         <item name="android:background">@drawable/bg_tv_button</item>
@@ -20,18 +27,41 @@
         <item name="android:stateListAnimator">@animator/tv_focus_scale</item>
     </style>
 
-    <style name="Widget.AlterSub.TvButton.Primary">
+    <!-- Every action on the TV screen: one fixed size, whatever its label -->
+    <style name="Widget.AlterSub.TvButton.Action">
+        <item name="android:layout_width">@dimen/action_width</item>
+        <item name="android:layout_height">@dimen/action_height</item>
+        <item name="android:layout_marginStart">12dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:paddingLeft">8dp</item>
+        <item name="android:paddingTop">0dp</item>
+        <item name="android:paddingRight">8dp</item>
+        <item name="android:paddingBottom">0dp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <!-- The one main action in a dialog: outlined in yellow while idle, so only the focused button is ever filled -->
+    <style name="Widget.AlterSub.TvButton.Action.Primary">
         <item name="android:background">@drawable/bg_tv_button_primary</item>
         <item name="android:textColor">@color/tv_button_primary_text</item>
     </style>
 
-    <!-- Smaller secondary buttons that sit side by side in the narrow phone-remote card -->
-    <style name="Widget.AlterSub.TvButton.Compact">
+    <!-- Small round "?" that explains the setting beside it -->
+    <style name="Widget.AlterSub.HelpButton" parent="Widget.AppCompat.Button">
+        <item name="android:layout_width">@dimen/help_button_size</item>
+        <item name="android:layout_height">@dimen/help_button_size</item>
         <item name="android:minWidth">0dp</item>
-        <item name="android:minHeight">40dp</item>
-        <item name="android:textSize">14sp</item>
-        <item name="android:paddingLeft">18dp</item>
-        <item name="android:paddingRight">18dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:background">@drawable/bg_help_button</item>
+        <item name="android:text">\?</item>
+        <item name="android:textColor">@color/tv_button_text</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textFontWeight">700</item>
+        <item name="android:stateListAnimator">@animator/tv_focus_scale</item>
     </style>
 
     <style name="TextAppearance.AlterSub.SectionLabel" parent="">
@@ -42,20 +72,42 @@
         <item name="android:textAllCaps">true</item>
     </style>
 
+    <!-- "Required", "Optional", "Phone remote": the same height in both columns so the cards below line up -->
+    <style name="Widget.AlterSub.ColumnLabel" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">@dimen/column_label_height</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:textAppearance">@style/TextAppearance.AlterSub.SectionLabel</item>
+    </style>
+
     <!-- One setup step: status icon, title + explanation, and an action button that hides once done -->
     <style name="Widget.AlterSub.SetupRow" parent="">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">10dp</item>
+        <item name="android:layout_marginTop">@dimen/card_gap</item>
         <item name="android:background">@drawable/bg_card</item>
         <item name="android:clipToPadding">false</item>
         <item name="android:gravity">center_vertical</item>
-        <item name="android:minHeight">76dp</item>
+        <item name="android:minHeight">70dp</item>
         <item name="android:orientation">horizontal</item>
         <item name="android:paddingLeft">18dp</item>
         <item name="android:paddingRight">16dp</item>
         <item name="android:paddingTop">12dp</item>
         <item name="android:paddingBottom">12dp</item>
+    </style>
+
+    <style name="Widget.AlterSub.StatusIcon" parent="">
+        <item name="android:layout_width">28dp</item>
+        <item name="android:layout_height">28dp</item>
+        <item name="android:importantForAccessibility">no</item>
+    </style>
+
+    <style name="Widget.AlterSub.RowText" parent="">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_marginStart">16dp</item>
+        <item name="android:orientation">vertical</item>
     </style>
 
     <style name="TextAppearance.AlterSub.RowTitle" parent="">
@@ -67,5 +119,23 @@
     <style name="TextAppearance.AlterSub.RowBody" parent="">
         <item name="android:textColor">@color/text_secondary</item>
         <item name="android:textSize">13sp</item>
+    </style>
+
+    <!-- Help dialog text -->
+    <style name="Widget.AlterSub.DialogHeading" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/accent</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Widget.AlterSub.DialogBody" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">6dp</item>
+        <item name="android:lineSpacingExtra">3dp</item>
+        <item name="android:textColor">@color/text_main</item>
+        <item name="android:textSize">14sp</item>
     </style>
 </resources>

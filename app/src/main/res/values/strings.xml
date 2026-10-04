@@ -1,7 +1,7 @@
 <resources>
     <string name="netflix_speech_service_label">AlterSub Netflix titles</string>
     <string name="netflix_speech_engine_label">AlterSub (Netflix titles)</string>
-    <string name="mute_netflix_announcements">Mute Netflix announcements</string>
+    <string name="mute_netflix_announcements">Mute announcements</string>
     <string name="netflix_speech_accessibility_description">Enables Netflix’s spoken titles. Choose AlterSub as the preferred speech engine to detect English description-page titles when playback starts. Other apps’ screen contents are not read.</string>
     <string name="app_name">AlterSub</string>
     <string name="accessibility_service_description">Monitors playback screen titles and metadata from streaming apps to automatically sync external subtitles.</string>
