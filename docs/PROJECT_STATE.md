@@ -88,6 +88,8 @@ AlterSub/
 │   └── proguard-rules.pro                           # R8 rules for release builds (no blanket keeps; see the file)
 ├── docs/
 │   └── PROJECT_STATE.md                             # This file
+├── site/                                        # Public information page for GitHub Pages (index.html, images, favicon)
+├── .github/workflows/pages.yml                  # Publishes site/ to GitHub Pages, adding the app's UI font
 ├── tools/build_app_font.py                          # Rebuilds the UI font files from upstream Google Sans Flex
 ├── gradle/wrapper/                                  # Gradle 8.13 wrapper binaries & properties
 ├── AGENTS.md                                        # Rules and constraints for AI agents / contributors

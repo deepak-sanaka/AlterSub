@@ -72,6 +72,7 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
   * [`WebRemoteServer.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/WebRemoteServer.kt) — NanoHTTPD embedded server on port 8080 (falls back to 8081–8089). Talks only to the [`RemoteController`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/RemoteController.kt) interface (implemented by `AlterSubApp`), so routes are tested in `WebRemoteServerTest`.
   * [`RemoteAuth.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/RemoteAuth.kt) — PIN pairing. Every `/api/*` route except `/api/pair` requires a paired phone's token (`X-AlterSub-Token`); keep new routes behind that check.
   * [`WebRemoteHtml.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/server/WebRemoteHtml.kt) — dark-mode mobile remote UI. Server data (track titles come from uploaders and screen text) is only ever inserted with `textContent`; never use `innerHTML` (`WebRemoteServerTest` enforces this).
+* **`site/`**: the public information page, published to GitHub Pages (https://deepak-sanaka.github.io/AlterSub/) by `.github/workflows/pages.yml` on pushes to `main` that touch it. Plain HTML/CSS, no build step; the workflow copies the app's UI font in (`site/fonts/` is git-ignored). Everything there is public: screenshots must use sample data, never real titles, addresses or PINs, and must not use streaming services' logos or branding.
 * **`service/`**:
   * [`SubtitleOverlayService.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/service/SubtitleOverlayService.kt) — `TYPE_APPLICATION_OVERLAY` foreground service.
   * [`AccessibilityInspectorService.kt`](file:///c:/Users/deepa/AlterSub/app/src/main/java/com/altersub/service/AccessibilityInspectorService.kt) — reads the allowlisted apps' screen text on its own thread (bounded, debounced) and hands confirmed titles to `SubtitleSession.onScreenTitle`, which takes one only if the catalog knows a film or series by exactly that name.
@@ -111,8 +112,8 @@ adb shell appops set com.altersub SYSTEM_ALERT_WINDOW allow
 # Grant accessibility inspector
 adb shell settings put secure enabled_accessibility_services com.altersub/com.altersub.service.AccessibilityInspectorService
 adb shell settings put secure accessibility_enabled 1
-# After reinstalling, the service can stay unbound: run "adb shell settings delete secure enabled_accessibility_services",
-# then the two lines above again
+# Force-stopping AlterSub (am force-stop, or a reinstall) switches its accessibility service off: run the two lines
+# above again afterwards, without force-stopping in between
 
 # Grant notification / media session listener
 adb shell cmd notification allow_listener com.altersub/com.altersub.service.MediaNotificationListener

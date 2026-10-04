@@ -1,0 +1,49 @@
+# Publishes the information page in site/ to GitHub Pages: https://deepak-sanaka.github.io/AlterSub/
+# One-time setup: Settings -> Pages -> Build and deployment -> Source: GitHub Actions.
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "app/src/main/res/font/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push replaces one still waiting
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The page uses the app's own UI font; copy it in rather than keeping a second copy in the repo
+      - name: Add the UI font and its licence
+        run: |
+          mkdir -p site/fonts
+          for weight in regular medium bold; do
+            cp "app/src/main/res/font/app_sans_${weight}.ttf" "site/fonts/app-sans-${weight}.ttf"
+          done
+          cp app/src/main/assets/licenses/google_sans_flex_OFL.txt site/fonts/OFL.txt
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

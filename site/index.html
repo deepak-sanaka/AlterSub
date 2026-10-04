@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AlterSub: your own subtitles on Android TV</title>
+<meta name="description" content="AlterSub is an Android TV app that shows the subtitles you choose over any streaming app, keeps them in time with what's playing, and lets you control them from your phone.">
+<meta name="theme-color" content="#0E0E11">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="AlterSub: your own subtitles on Android TV">
+<meta property="og:description" content="Subtitles you choose, over any streaming app, kept in time, controlled from your phone.">
+<meta property="og:image" content="https://deepak-sanaka.github.io/AlterSub/images/tv-setup.png">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+    /* The UI font is the app's own (AlterSub Sans), added at deploy time by .github/workflows/pages.yml */
+    @font-face { font-family: "AlterSub Sans"; font-weight: 400; font-display: swap; src: url("fonts/app-sans-regular.ttf") format("truetype"); }
+    @font-face { font-family: "AlterSub Sans"; font-weight: 500; font-display: swap; src: url("fonts/app-sans-medium.ttf") format("truetype"); }
+    @font-face { font-family: "AlterSub Sans"; font-weight: 700; font-display: swap; src: url("fonts/app-sans-bold.ttf") format("truetype"); }
+
+    :root {
+        --bg: #0E0E11; --surface: #1C1C22; --surface-2: #26262D; --line: #2C2C33;
+        --text: #F4F4F6; --muted: #A1A1AA; --accent: #FFE500; --ink: #141414; --ok: #3DDC84;
+        --radius: 20px; --gutter: 16px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+    body { background: var(--bg); color: var(--text); font: 17px/1.6 "AlterSub Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    img { display: block; max-width: 100%; height: auto; }
+    a { color: var(--accent); text-underline-offset: 3px; }
+    a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 var(--gutter); }
+    section { padding: 72px 0 0; }
+    h1, h2, h3 { line-height: 1.15; letter-spacing: -.02em; }
+    h2 { font-size: clamp(28px, 4vw, 40px); }
+    h3 { font-size: 19px; letter-spacing: -.01em; }
+    .eyebrow { color: var(--muted); font-size: 13px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; }
+    .lead { color: var(--muted); font-size: clamp(17px, 2vw, 20px); max-width: 680px; margin-top: 14px; }
+    .muted { color: var(--muted); }
+
+    /* Header */
+    header { padding: 20px 0; }
+    header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .logo { color: var(--accent); font-size: 26px; font-weight: 700; letter-spacing: -.03em; text-decoration: none; }
+    nav { display: flex; gap: 24px; font-size: 15px; }
+    nav a { color: var(--text); text-decoration: none; }
+    nav a:hover { color: var(--accent); }
+    @media (max-width: 640px) { nav .optional { display: none; } }
+
+    /* Hero */
+    .hero { padding-top: 40px; }
+    .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: var(--surface);
+        color: var(--muted); font-size: 14px; }
+    .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+    .hero h1 { font-size: clamp(36px, 6.4vw, 68px); max-width: 860px; margin-top: 20px; letter-spacing: -.035em; }
+    .hero h1 em { font-style: normal; color: var(--accent); }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+    .button { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 22px; border-radius: 14px;
+        background: var(--surface-2); color: var(--text); font-weight: 500; text-decoration: none; }
+    .button:hover { background: #32323b; }
+    .button.primary { background: var(--accent); color: var(--ink); }
+    .button.primary:hover { background: #ffef5c; }
+
+    /* A TV around the setup-screen screenshot */
+    .tv { margin-top: 48px; }
+    .tv-screen { padding: 10px; border-radius: 18px; background: #050506; box-shadow: 0 0 0 1px #2a2a31, 0 40px 80px -40px #000; }
+    .tv-screen img { border-radius: 8px; }
+    .tv-stand { width: 22%; height: 14px; margin: 0 auto; border-radius: 0 0 10px 10px; background: #1b1b20; }
+    .caption { margin-top: 14px; color: var(--muted); font-size: 14px; text-align: center; }
+
+    /* Features */
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; margin-top: 36px; }
+    .card { padding: 26px; border-radius: var(--radius); background: var(--surface); }
+    .card .icon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 18px; border-radius: 12px;
+        background: #343223; color: var(--accent); }
+    .card .icon svg { width: 24px; height: 24px; }
+    .card p { margin-top: 8px; color: var(--muted); font-size: 16px; }
+
+    /* Phone remote */
+    .phones { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(12px, 3vw, 24px); margin-top: 40px; }
+    .phone { padding: 8px; border-radius: 34px; background: #050506; box-shadow: 0 0 0 1px #2a2a31; }
+    .phone img { border-radius: 27px; }
+    figure figcaption { margin-top: 16px; }
+    figcaption strong { display: block; font-size: 17px; }
+    figcaption span { color: var(--muted); font-size: 15px; }
+    @media (max-width: 560px) {
+        /* On phones: side by side, scrolling sideways inside the row (never the page) */
+        .phones { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 72%; overflow-x: auto;
+            scroll-snap-type: x mandatory; padding-bottom: 12px; margin-right: calc(-1 * var(--gutter)); padding-right: var(--gutter); }
+        .phones figure { scroll-snap-align: start; }
+    }
+
+    /* Steps */
+    .steps { counter-reset: step; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 16px; margin-top: 36px; list-style: none; }
+    .steps li { counter-increment: step; padding: 24px; border-radius: var(--radius); background: var(--surface); }
+    .steps li::before { content: counter(step); display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: 16px;
+        border-radius: 50%; background: var(--accent); color: var(--ink); font-weight: 700; }
+    .steps p { margin-top: 6px; color: var(--muted); font-size: 16px; }
+
+    /* Setup */
+    .setup { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; margin-top: 36px; }
+    .setup .wide { grid-column: 1 / -1; }
+    .setup .card ul { margin: 12px 0 0 20px; color: var(--muted); font-size: 16px; }
+    .setup .card li + li { margin-top: 6px; }
+    .code { margin-top: 14px; border-radius: 14px; background: var(--bg); overflow: hidden; }
+    .code-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 18px;
+        border-bottom: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+    pre { overflow-x: auto; padding: 14px 18px 16px; color: #E6E6EA; font: 14px/1.7 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; }
+    pre .comment { color: #7d7d87; }
+    .copy { min-height: 32px; padding: 0 12px; border: 0; border-radius: 10px;
+        background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+    .copy:hover { background: #32323b; }
+    .note { margin-top: 14px; color: var(--muted); font-size: 15px; }
+
+    /* Good to know */
+    .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; margin-top: 36px; }
+
+    footer { margin-top: 96px; padding: 32px 0 48px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+    footer .wrap { display: grid; gap: 10px; }
+    footer .logo { font-size: 20px; }
+
+    @media (max-width: 640px) { section { padding-top: 56px; } .card { padding: 22px; } }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<header>
+    <div class="wrap">
+        <a class="logo" href="#top" aria-label="AlterSub home">AlterSub</a>
+        <nav aria-label="Sections">
+            <a class="optional" href="#features">Features</a>
+            <a class="optional" href="#remote">Phone remote</a>
+            <a href="#setup">Setup</a>
+            <a href="https://github.com/deepak-sanaka/AlterSub">GitHub</a>
+        </nav>
+    </div>
+</header>
+
+<main id="top">
+    <section class="hero">
+        <div class="wrap">
+            <span class="pill">Early preview · Android TV 9 and newer</span>
+            <h1>Your own subtitles, over <em>any</em> streaming app.</h1>
+            <p class="lead">AlterSub is an Android TV app that shows the subtitles you choose on top of what you're watching, keeps them in time as you pause and skip, and lets you pick and adjust them from your phone.</p>
+            <div class="actions">
+                <a class="button primary" href="#setup">How to set it up</a>
+                <a class="button" href="https://github.com/deepak-sanaka/AlterSub">View the code on GitHub</a>
+            </div>
+            <figure class="tv">
+                <div class="tv-screen">
+                    <img src="images/tv-setup.png" width="1920" height="1080"
+                        alt="AlterSub's setup screen on a TV: three required steps with green ticks, an optional Netflix titles card, and a QR code to connect a phone">
+                </div>
+                <div class="tv-stand" aria-hidden="true"></div>
+                <figcaption class="caption">The setup screen on your TV. Three steps, then scan the code with your phone.</figcaption>
+            </figure>
+        </div>
+    </section>
+
+    <section id="features">
+        <div class="wrap">
+            <p class="eyebrow">What it does</p>
+            <h2>Subtitles that work the way you want.</h2>
+            <div class="grid">
+                <article class="card">
+                    <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="4.5" width="19" height="15" rx="3"/><path d="M6 15h6m2 0h4"/></svg></div>
+                    <h3>Over any app</h3>
+                    <p>AlterSub draws subtitles in a layer on top of the screen, so they work over Netflix, Prime Video, YouTube or your own videos. Your remote keeps controlling the app as usual.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+                    <h3>Stays in time</h3>
+                    <p>It follows play, pause and seek from the app that's playing, so the words stay with the voices. If a file runs early or late, nudge it from your phone once and AlterSub remembers.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></div>
+                    <h3>Finds the right film</h3>
+                    <p>Where an app says what's playing, AlterSub picks it up, checks it against a film catalogue and loads subtitles. If two films share a name, it asks which one you mean.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18h2"/></svg></div>
+                    <h3>Controlled from your phone</h3>
+                    <p>Scan the code on the TV and the remote opens in your phone's browser, with no app to install. Search, switch subtitle files, upload your own, and fix the timing.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4h4"/></svg></div>
+                    <h3>Remembers your picks</h3>
+                    <p>The subtitle file and timing you chose are saved for each title, and come back after a restart or when you return to the same film. Recent picks are one tap away.</p>
+                </article>
+                <article class="card">
+                    <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M13 2 4.5 13.5H12L11 22l8.5-11.5H12L13 2z"/></svg></div>
+                    <h3>Light on older TVs</h3>
+                    <p>Built for 1 GB Android TV boxes: under 2 MB to install, about 30 MB of memory, and it rests between subtitle changes instead of redrawing all the time.</p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <section id="remote">
+        <div class="wrap">
+            <p class="eyebrow">Phone remote</p>
+            <h2>Everything you need, on the phone in your hand.</h2>
+            <p class="lead">The remote is a page served by your TV on your own Wi-Fi. It pairs with a PIN or the TV's QR code, and only one phone can control the TV at a time.</p>
+            <div class="phones">
+                <figure>
+                    <div class="phone"><img src="images/phone-subtitles.png" width="780" height="1688" loading="lazy"
+                        alt="The Subtitles tab: a search box, the subtitle file showing on the TV, and a button to fix the timing"></div>
+                    <figcaption><strong>Subtitles</strong><span>Search for a title, pick a file, or use one from your phone.</span></figcaption>
+                </figure>
+                <figure>
+                    <div class="phone"><img src="images/phone-timing.png" width="780" height="1688" loading="lazy"
+                        alt="The Timing tab: the current timing of plus 1.5 seconds with a Reset button, and minus and plus 0.5 second buttons"></div>
+                    <figcaption><strong>Timing</strong><span>Words late? Tap −. Early? Tap +. Or sync to a line you hear.</span></figcaption>
+                </figure>
+                <figure>
+                    <div class="phone"><img src="images/phone-style.png" width="780" height="1688" loading="lazy"
+                        alt="The Style tab: a preview of the subtitle text with controls for size, position and colour"></div>
+                    <figcaption><strong>Style</strong><span>Size, position and colour, with a live preview.</span></figcaption>
+                </figure>
+            </div>
+        </div>
+    </section>
+
+    <section id="how">
+        <div class="wrap">
+            <p class="eyebrow">How it works</p>
+            <h2>Set it up once, then just watch.</h2>
+            <ol class="steps">
+                <li><h3>Install AlterSub</h3><p>Put the app on your Android TV (see below).</p></li>
+                <li><h3>Finish the setup screen</h3><p>Allow the three required steps. Each has its own button.</p></li>
+                <li><h3>Scan the code</h3><p>Point your phone's camera at the QR code on the TV to open the remote.</p></li>
+                <li><h3>Play something</h3><p>Subtitles load on their own when AlterSub recognises the title. Otherwise, search on your phone.</p></li>
+            </ol>
+        </div>
+    </section>
+
+    <section id="setup">
+        <div class="wrap">
+            <p class="eyebrow">Setup</p>
+            <h2>Getting it onto your TV.</h2>
+            <p class="lead">There's no download yet, so for now AlterSub is built from its source code and installed from a computer.</p>
+            <div class="setup">
+                <article class="card">
+                    <h3>You'll need</h3>
+                    <ul>
+                        <li>An Android TV or Google TV running Android 9 or newer.</li>
+                        <li>A phone on the same Wi-Fi as the TV.</li>
+                        <li>A computer with the Android SDK (for example Android Studio) to build the app and install it over ADB.</li>
+                        <li>Developer options and network debugging turned on in the TV's settings.</li>
+                    </ul>
+                </article>
+                <article class="card">
+                    <h3>Build and install</h3>
+                    <div class="code">
+                        <div class="code-head"><span>On your computer</span><button class="copy" type="button">Copy</button></div>
+                        <pre><code>git clone https://github.com/deepak-sanaka/AlterSub.git
+cd AlterSub
+./gradlew assembleDebug
+adb connect &lt;TV-IP&gt;:5555
+adb install app/build/outputs/apk/debug/app-debug.apk</code></pre>
+                    </div>
+                    <p class="note">On Windows, use <code>gradlew.bat</code> instead of <code>./gradlew</code>.</p>
+                </article>
+                <article class="card wide">
+                    <h3>Permissions</h3>
+                    <p class="muted" style="margin-top: 8px; font-size: 16px;">Open AlterSub on the TV and follow its setup screen. Some TVs hide these settings; if a button can't open them, grant them from the computer instead:</p>
+                    <div class="code">
+                        <div class="code-head"><span>Fallback over ADB</span><button class="copy" type="button">Copy</button></div>
+                        <pre><code><span class="comment"># Show subtitles over other apps</span>
+adb shell appops set com.altersub SYSTEM_ALERT_WINDOW allow
+<span class="comment"># Recognise what's playing</span>
+adb shell settings put secure enabled_accessibility_services com.altersub/com.altersub.service.AccessibilityInspectorService
+adb shell settings put secure accessibility_enabled 1
+<span class="comment"># Follow play and pause</span>
+adb shell cmd notification allow_listener com.altersub/com.altersub.service.MediaNotificationListener</code></pre>
+                    </div>
+                    <p class="note">Many 1–2 GB TVs never allow the last one. On those, run this once instead, then reopen AlterSub:</p>
+                    <div class="code">
+                        <div class="code-head"><span>Low-memory TVs</span><button class="copy" type="button">Copy</button></div>
+                        <pre><code>adb shell pm grant com.altersub android.permission.DUMP</code></pre>
+                    </div>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <section id="good-to-know">
+        <div class="wrap">
+            <p class="eyebrow">Good to know</p>
+            <h2>The fine print, in plain words.</h2>
+            <div class="facts">
+                <article class="card">
+                    <h3>Netflix</h3>
+                    <p>Netflix doesn't tell other apps what's playing, so search for the title on your phone; AlterSub then remembers your subtitle file and timing for it. An optional setup can also pick up Netflix titles when its menus are in English.</p>
+                </article>
+                <article class="card">
+                    <h3>Where subtitles come from</h3>
+                    <p>AlterSub searches community subtitle sources such as OpenSubtitles, and you can always use your own <code>.srt</code> or <code>.vtt</code> file from your phone.</p>
+                </article>
+                <article class="card">
+                    <h3>Privacy</h3>
+                    <p>No account, no ads and no tracking. The phone remote only works on your own Wi-Fi, after pairing. AlterSub goes online only to look up titles and download subtitles.</p>
+                </article>
+                <article class="card">
+                    <h3>Early days</h3>
+                    <p>AlterSub is an early preview, tested on the Android TV emulator and one real TV so far. Expect rough edges, and check the project on GitHub for what's known.</p>
+                </article>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer>
+    <div class="wrap">
+        <a class="logo" href="#top">AlterSub</a>
+        <p>An independent project, not affiliated with Netflix, Amazon, Google or any streaming service. Their names are trademarks of their owners.</p>
+        <p>Set in AlterSub Sans, based on Google Sans Flex (<a href="fonts/OFL.txt">SIL Open Font License</a>). Code on <a href="https://github.com/deepak-sanaka/AlterSub">GitHub</a>.</p>
+    </div>
+</footer>
+
+<script>
+    // Copy buttons on the command blocks; comments are copied too, and the shell ignores them
+    for (const button of document.querySelectorAll('.copy')) {
+        button.addEventListener('click', async () => {
+            const text = button.closest('.code').querySelector('pre').innerText;
+            try {
+                await navigator.clipboard.writeText(text);
+                button.textContent = 'Copied';
+            } catch (e) {
+                button.textContent = 'Select and copy';
+            }
+            setTimeout(() => { button.textContent = 'Copy'; }, 2000);
+        });
+    }
+</script>
+</body>
+</html>

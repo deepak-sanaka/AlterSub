@@ -52,3 +52,6 @@ gradle-daemon-jvm.properties
 
 # Real-device test logs (tools/capture_device_logs.sh): contain watched titles and network details
 device-logs/
+
+# GitHub Pages: fonts are copied into site/ at deploy time (.github/workflows/pages.yml)
+site/fonts/
