@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV checkbox, unticked: a 20dp rounded ring (a filled even-odd path, not a stroke) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <path
+        android:fillColor="@color/text_secondary"
+        android:fillType="evenOdd"
+        android:pathData="M10,6h12a4,4 0,0 1,4 4v12a4,4 0,0 1,-4 4h-12a4,4 0,0 1,-4 -4v-12a4,4 0,0 1,4 -4zM10,8h12a2,2 0,0 1,2 2v12a2,2 0,0 1,-2 2h-12a2,2 0,0 1,-2 -2v-12a2,2 0,0 1,2 -2z" />
+</vector>

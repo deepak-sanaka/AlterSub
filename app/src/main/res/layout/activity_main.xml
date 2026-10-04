@@ -228,16 +228,17 @@
                             android:gravity="center_vertical"
                             android:orientation="horizontal">
 
+                            <!-- Focus lights up the box only (checkbox_tv), not the label -->
                             <CheckBox
                                 android:id="@+id/cbMuteNetflixSpeech"
                                 android:layout_width="wrap_content"
                                 android:layout_height="@dimen/action_height"
-                                android:background="@drawable/bg_tv_button"
-                                android:buttonTint="@color/tv_button_text"
-                                android:paddingEnd="14dp"
-                                android:stateListAnimator="@animator/tv_focus_scale"
+                                android:background="@null"
+                                android:button="@drawable/checkbox_tv"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
                                 android:text="@string/mute_netflix_announcements"
-                                android:textColor="@color/tv_button_text"
+                                android:textColor="@color/text_main"
                                 android:textSize="14sp" />
 
                             <Space

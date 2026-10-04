@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Focused and unticked: the ring turns yellow inside a soft yellow halo, so focus shows on the box alone -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <path
+        android:fillColor="#40FFE500"
+        android:pathData="M16,0a16,16 0,1 1,0 32a16,16 0,1 1,0 -32z" />
+    <path
+        android:fillColor="@color/accent"
+        android:fillType="evenOdd"
+        android:pathData="M10,6h12a4,4 0,0 1,4 4v12a4,4 0,0 1,-4 4h-12a4,4 0,0 1,-4 -4v-12a4,4 0,0 1,4 -4zM10,8h12a2,2 0,0 1,2 2v12a2,2 0,0 1,-2 2h-12a2,2 0,0 1,-2 -2v-12a2,2 0,0 1,2 -2z" />
+</vector>

@@ -86,6 +86,8 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">@dimen/card_gap</item>
         <item name="android:background">@drawable/bg_card</item>
+        <!-- A focused button grows a little; let it draw into the card's padding rather than be cut off -->
+        <item name="android:clipChildren">false</item>
         <item name="android:clipToPadding">false</item>
         <item name="android:gravity">center_vertical</item>
         <item name="android:minHeight">70dp</item>
