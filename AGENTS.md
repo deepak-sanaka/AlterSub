@@ -14,7 +14,7 @@
 When modifying or extending this codebase, **agents must strictly adhere to the following rules**:
 
 ### Rule 1: NEVER Use Screen Capture / MediaProjection for Video Frame OCR
-* **Reason**: Netflix and other streaming apps render into a hardware-protected secure surface (Widevine L1 DRM) with `FLAG_SECURE`. Any attempt to capture video pixels via `MediaProjection.createVirtualDisplay()` yields pure black pixels (`#000000`). Continuous frame capture also throttles low-power TV processors.
+* **Reason**: Netflix and other streaming apps render into a hardware-protected secure surface (Widevine L1 DRM) with `FLAG_SECURE`. Any attempt to capture video pixels via `MediaProjection.createVirtualDisplay()` yields pure black pixels (`#000000`); confirmed on a real TV, where even ADB's `screencap` was refused and `screenrecord` came out black for Netflix's menus as well as its video. Continuous frame capture also throttles low-power TV processors.
 * **Prescribed Pattern**: Content detection must rely exclusively on:
   1. `MediaSessionManager` / `NotificationListenerService` (reads active title & live playhead timestamps). On low-RAM TVs, where Android refuses notification access, `MediaSessionPoller` reads the same data from the `media_session` dump with an ADB-granted DUMP permission.
   2. `AccessibilityService` (inspects view hierarchy text nodes on UI title cards when navigating or pausing).
