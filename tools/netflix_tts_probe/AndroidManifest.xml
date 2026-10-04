@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.altersub.ttsprobe" android:versionCode="1" android:versionName="0.1-test">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="28" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <application android:label="AlterSub temporary TTS probe" android:debuggable="true"
+        android:allowBackup="false" android:theme="@android:style/Theme.Material.NoActionBar">
+        <service android:name=".ProbeTtsService" android:exported="true"
+            android:label="AlterSub temporary TTS probe">
+            <intent-filter>
+                <action android:name="android.intent.action.TTS_SERVICE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data android:name="android.speech.tts" android:resource="@xml/tts_engine" />
+        </service>
+        <activity android:name=".SelfTestActivity" android:exported="true" />
+    </application>
+</manifest>

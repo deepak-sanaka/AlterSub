@@ -3,6 +3,7 @@ package com.altersub
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import android.util.Log
 import com.altersub.core.clock.SubtitleClock
 import com.altersub.core.model.ContentMetadata
@@ -14,6 +15,7 @@ import com.altersub.core.session.SearchState
 import com.altersub.core.session.TitleMatch
 import com.altersub.core.session.SubtitleSession
 import com.altersub.detection.DetectionSource
+import com.altersub.detection.NetflixSpeechDetector
 import com.altersub.provider.CinemetaTitleResolver
 import com.altersub.provider.CompositeSubtitleProvider
 import com.altersub.server.RemoteAuth
@@ -57,6 +59,11 @@ class AlterSubApp : Application(), RemoteController {
     override val activeTrack: StateFlow<SubtitleTrack?> get() = session.activeTrack
     val subtitleIndex: StateFlow<SubtitleIndex?> get() = session.subtitleIndex
     val acceptsScreenDetection: Boolean get() = session.acceptsScreenDetection
+    private val netflixSpeech = NetflixSpeechDetector(SystemClock::elapsedRealtime)
+
+    fun onNetflixSpeech(text: String) {
+        netflixSpeech.onSpeech(text)
+    }
 
     /** Play-state fallback for low-RAM TVs, active once the DUMP permission is granted over ADB. */
     val mediaSessionPoller by lazy { MediaSessionPoller(this, appScope) }
@@ -190,11 +197,18 @@ class AlterSubApp : Application(), RemoteController {
 
     override fun chooseMatch(imdbId: String): Boolean = session.chooseMatch(imdbId)
 
-    fun onMediaSessionsEnded() = session.onMediaSessionsEnded()
+    fun onMediaSessionsEnded() {
+        netflixSpeech.onPlaybackEnded()
+        session.onMediaSessionsEnded()
+    }
 
     /** A streaming app's playback as seen by the media-session listener or poller. */
-    fun onPlaybackObserved(appPackage: String, positionMs: Long, playing: Boolean) =
+    fun onPlaybackObserved(appPackage: String, positionMs: Long, playing: Boolean) {
+        netflixSpeech.onPlayback(appPackage, playing)?.let { confirmed ->
+            session.onScreenTitle(confirmed.metadata, requireChoice = true) { netflixSpeech.isCurrent(confirmed.generation) }
+        }
         session.onPlaybackObserved(appPackage, positionMs, playing)
+    }
 
     override fun recentPicks(): List<PickMemory.Pick> = session.recentPicks()
 

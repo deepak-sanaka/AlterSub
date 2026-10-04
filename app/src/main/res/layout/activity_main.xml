@@ -164,6 +164,26 @@
                         android:text="Enable" />
                 </LinearLayout>
 
+                <!-- Optional Netflix spoken-title detection -->
+                <LinearLayout style="@style/Widget.AlterSub.SetupRow">
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:orientation="vertical">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:text="Netflix titles" android:textAppearance="@style/TextAppearance.AlterSub.RowTitle" />
+                        <TextView android:id="@+id/tvNetflixSpeechStatus" android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" android:text="Optional. Uses Netflix’s English spoken titles when you press Play."
+                            android:textAppearance="@style/TextAppearance.AlterSub.RowBody" />
+                        <CheckBox android:id="@+id/cbMuteNetflixSpeech" android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                            android:minHeight="40dp" android:paddingEnd="8dp"
+                            android:background="@drawable/bg_tv_button" android:buttonTint="@color/tv_button_text"
+                            android:textColor="@color/tv_button_text" android:text="@string/mute_netflix_announcements"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+                    <Button android:id="@+id/btnNetflixSpeechSetup" style="@style/Widget.AlterSub.TvButton.Compact"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Set up" />
+                </LinearLayout>
+
                 <!-- 3. Notification listener (MediaSession play/pause + position) -->
                 <LinearLayout style="@style/Widget.AlterSub.SetupRow">
 

@@ -126,7 +126,7 @@ object WebRemoteHtml {
 <body>
 <main>
     <header>
-        <div class="brand">AlterSub</div>
+        <div class="brand">AlterSub Remote</div>
         <div class="pill" id="conn">Connecting</div>
     </header>
 

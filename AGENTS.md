@@ -19,6 +19,7 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
   1. `MediaSessionManager` / `NotificationListenerService` (reads active title & live playhead timestamps). On low-RAM TVs, where Android refuses notification access, `MediaSessionPoller` reads the same data from the `media_session` dump with an ADB-granted DUMP permission.
   2. `AccessibilityService` (inspects view hierarchy text nodes on UI title cards when navigating or pausing).
   3. User search / Phone Companion Web Remote override.
+  4. Optional Netflix spoken-title metadata, explicitly enabled by the user: `NetflixSpeechAccessibilityService` makes Netflix publish its own narration, and `NetflixSpeechEngineService` receives the title strings. The default **Mute Netflix announcements** setting completes only direct Netflix requests with silence; optional audible narration uses the original TTS engine. Inspect strings only from the exact Netflix package UID, confirm a description-page title with its Playing announcement and active media playback, and retain manual/media-session priority. Never record TV audio or screen pixels. Other apps' utterances, including TalkBack's own speech, must only be forwarded, never muted, inspected or logged.
 
 ### Rule 2: NEVER Introduce Heavy UI Runtimes into the Subtitle Overlay
 * **Reason**: Jetpack Compose adds ~15MB+ heap memory overhead and incurs frequent garbage collection pauses during recomposition, causing visible video stutter on 1GB RAM TV boxes.

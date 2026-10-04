@@ -24,6 +24,31 @@ import java.io.File
 @OptIn(ExperimentalCoroutinesApi::class)
 class SubtitleSessionTest {
 
+    @Test fun `spoken title requires choice when catalog has two exact names`() = runTest {
+        catalog["under the open sky"] = listOf(sky2025, sky2020)
+        val session = newSession()
+        session.onScreenTitle(ContentMetadata("Under the Open Sky"), requireChoice = true)
+        advanceUntilIdle()
+        assertEquals(SearchState.CHOOSE, session.searchState.value)
+        assertNull(session.currentContent.value?.imdbId)
+        assertEquals(2, session.matches.value.size)
+        assertTrue(fake.searched.isEmpty())
+    }
+
+    @Test fun `stale spoken title cannot finish catalog verification`() = runTest {
+        val answer = CompletableDeferred<List<TitleMatch>>()
+        val session = SubtitleSession(CompositeSubtitleProvider(listOf(fake)), clock, this,
+            File(tempDir.root, "stale-speech"), PickMemory(pickStore), TitleResolver { answer.await() }) {}
+        var current = true
+        session.onScreenTitle(ContentMetadata("Inception"), requireChoice = true) { current }
+        advanceUntilIdle() // The catalog lookup is now suspended in flight.
+        current = false
+        answer.complete(listOf(TitleMatch("tt1375666", "Inception", 2010)))
+        advanceUntilIdle()
+        assertNull(session.currentContent.value)
+        assertTrue(fake.searched.isEmpty())
+    }
+
     @get:Rule
     val tempDir = TemporaryFolder()
 

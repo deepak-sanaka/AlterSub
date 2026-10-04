@@ -33,6 +33,8 @@ import com.altersub.server.WebRemoteServer
 import com.altersub.service.AccessibilityInspectorService
 import com.altersub.service.MediaNotificationListener
 import com.altersub.service.MediaSessionPoller
+import com.altersub.service.NetflixSpeechAccessibilityService
+import com.altersub.service.SpeechEngineSettings
 import com.altersub.ui.AppFont
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -183,6 +185,34 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupPermissions() {
+        binding.cbMuteNetflixSpeech.isChecked = SpeechEngineSettings.muteNetflix(this)
+        binding.cbMuteNetflixSpeech.setOnCheckedChangeListener { _, checked ->
+            SpeechEngineSettings.setMuteNetflix(this, checked)
+            updatePermissionStatuses()
+        }
+        binding.btnNetflixSpeechSetup.setOnClickListener {
+            if (SpeechEngineSettings.prepare(this) == null) {
+                AlertDialog.Builder(this).setTitle("Netflix titles")
+                    .setMessage("Install a speech engine, such as Speech Services by Google, before enabling Netflix titles.")
+                    .setPositiveButton("OK", null).show()
+            } else {
+                AlertDialog.Builder(this).setTitle("Netflix titles")
+                    .setMessage("Enable ‘AlterSub Netflix titles’ in Accessibility, then choose ‘AlterSub (Netflix titles)’ " +
+                        "as the preferred engine in Text-to-speech settings. TalkBack can stay off. Netflix announcements are muted " +
+                        "by default; uncheck ‘Mute Netflix announcements’ to hear them. Movie audio and other apps’ speech continue normally.\n\n" +
+                        "Open a Netflix description page, wait briefly, then press Play to find subtitles automatically. English announcements " +
+                        "are supported; starting playback directly from a card or autoplay may need phone search.")
+                    .setPositiveButton("Accessibility") { _, _ ->
+                        openPermissionScreen(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), "Netflix titles",
+                            accessibilityAdbCommand(ComponentName(this, NetflixSpeechAccessibilityService::class.java)))
+                    }
+                    .setNegativeButton("Speech settings") { _, _ ->
+                        openPermissionScreen(Intent("com.android.settings.TTS_SETTINGS"), "Netflix speech engine",
+                            "settings put secure tts_default_synth $packageName")
+                    }
+                    .setNeutralButton("Close", null).show()
+            }
+        }
         binding.btnOverlayPermission.setOnClickListener {
             openPermissionScreen(
                 Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")),
@@ -195,9 +225,7 @@ class MainActivity : AppCompatActivity() {
             openPermissionScreen(
                 Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
                 "Recognise what's playing",
-                "settings put secure enabled_accessibility_services " +
-                    "$packageName/${AccessibilityInspectorService::class.java.name}\n" +
-                    "adb shell settings put secure accessibility_enabled 1"
+                accessibilityAdbCommand(ComponentName(this, AccessibilityInspectorService::class.java))
             )
         }
 
@@ -228,6 +256,14 @@ class MainActivity : AppCompatActivity() {
      * Many Android TV builds (including the Android TV emulator images) ship without these special-access
      * screens, and launching a missing one crashed the app. Fall back to explaining the ADB grant instead.
      */
+    private fun accessibilityAdbCommand(component: ComponentName): String {
+        val services = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            .orEmpty().split(':').filter { ComponentName.unflattenFromString(it) != null }
+        val combined = (services + component.flattenToString()).distinct().joinToString(":")
+        return "settings put secure enabled_accessibility_services $combined\n" +
+            "adb shell settings put secure accessibility_enabled 1"
+    }
+
     private fun openPermissionScreen(intent: Intent, permissionName: String, adbShellCommand: String) {
         try {
             startActivity(intent)
@@ -252,11 +288,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updatePermissionStatuses() {
+        // Netflix needs the playback listener too; a spoken browsing title alone is insufficient.
+        val listenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName) ||
+            MediaSessionPoller.hasDumpPermission(this)
+        val netflixComponent = ComponentName(this, NetflixSpeechAccessibilityService::class.java).flattenToString()
+        val netflixEnabled = Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1 &&
+            Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            .orEmpty().split(':').any { ComponentName.unflattenFromString(it)?.flattenToString() == netflixComponent }
+        binding.tvNetflixSpeechStatus.text = when {
+            !netflixEnabled -> "Optional. Enable Netflix titles in Accessibility, then select AlterSub as the speech engine."
+            !SpeechEngineSettings.isSelected(this) -> "Choose AlterSub (Netflix titles) as the preferred speech engine."
+            SpeechEngineSettings.backend(this) == null -> "Keep a voice engine installed for other apps’ speech."
+            !listenerEnabled -> "Enable playback sync below so AlterSub can confirm when the title starts playing."
+            else -> (if (SpeechEngineSettings.muteNetflix(this)) "Ready. Netflix announcements are muted. " else "Ready. Netflix announcements are audible. ") +
+                "Open an English description page, then press Play."
+        }
         val canOverlay = Settings.canDrawOverlays(this)
         val inspectorEnabled = isAccessibilityInspectorEnabled()
         // Either route works: the notification listener, or (low-RAM TVs) polling with the DUMP permission
-        val listenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName) ||
-            MediaSessionPoller.hasDumpPermission(this)
 
         showStep(binding.ivOverlayStatus, binding.btnOverlayPermission, canOverlay)
         showStep(binding.ivAccessibilityStatus, binding.btnAccessibilityPermission, inspectorEnabled)

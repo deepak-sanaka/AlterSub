@@ -9,6 +9,7 @@ import com.altersub.core.parser.SrtParser
 import com.altersub.core.parser.SubtitleIndex
 import com.altersub.detection.DetectionArbiter
 import com.altersub.detection.DetectionSource
+import com.altersub.detection.DiagLog
 import com.altersub.provider.CompositeSubtitleProvider
 import com.altersub.provider.TitleResolver
 import kotlinx.coroutines.CoroutineScope
@@ -97,7 +98,7 @@ class SubtitleSession(
      * only once the catalog knows a film or series by exactly that name. That's checked before anything is
      * replaced, so text that fails the check leaves the current subtitles alone.
      */
-    fun onScreenTitle(metadata: ContentMetadata) {
+    fun onScreenTitle(metadata: ContentMetadata, requireChoice: Boolean = false, stillCurrent: () -> Boolean = { true }) {
         synchronized(detectionLock) {
             if (!arbiter.acceptsScreenDetection || _currentContent.value?.contentKey == metadata.contentKey) return
             screenCheckJob?.cancel()
@@ -105,13 +106,17 @@ class SubtitleSession(
                 val candidates = resolver.find(metadata)
                 val match = TitleMatching.verify(metadata, candidates)
                 if (match == null) {
-                    Log.i(TAG, "Ignoring screen text \"${metadata.title}\": not a known film or series")
+                    DiagLog.d { "Ignoring screen text \"${metadata.title}\": not a known film or series" }
                     return@launch
                 }
-                synchronized(detectionLock) {
-                    val verified = metadata.copy(title = match.name, year = match.year ?: metadata.year, imdbId = match.imdbId)
+                synchronized(detectionLock) verifiedResult@{
+                    if (!isActive || !stillCurrent()) return@verifiedResult
+                    val exact = candidates.filter { TitleMatching.normalize(it.name) == TitleMatching.normalize(metadata.title) }
+                    val ambiguous = requireChoice && exact.size > 1 && metadata.year == null
+                    val verified = if (ambiguous) metadata else metadata.copy(title = match.name, year = match.year ?: metadata.year, imdbId = match.imdbId)
                     // The phone still lists the other films of that name, to correct the guess
-                    if (detect(verified, DetectionSource.ACCESSIBILITY, rawQuery = null)) {
+                    if (detect(verified, DetectionSource.ACCESSIBILITY, rawQuery = null,
+                            requireChoice = ambiguous, catalogCandidates = candidates)) {
                         _matches.value = TitleMatching.options(metadata, candidates)
                     }
                 }
@@ -153,7 +158,8 @@ class SubtitleSession(
     }
 
     /** Returns false if the arbiter kept the current content. */
-    private fun detect(detected: ContentMetadata, source: DetectionSource, rawQuery: String?): Boolean {
+    private fun detect(detected: ContentMetadata, source: DetectionSource, rawQuery: String?,
+        requireChoice: Boolean = false, catalogCandidates: List<TitleMatch>? = null): Boolean {
         synchronized(detectionLock) {
             if (!arbiter.accept(detected, source, _currentContent.value)) return false
 
@@ -177,7 +183,11 @@ class SubtitleSession(
             _matches.value = emptyList()
             _searchState.value = SearchState.SEARCHING
             clock.setOffset(trackOffsets.switchTo(null, clock.userOffsetMs.value))
-            Log.i(TAG, "New content detected via $source: ${metadata.getDisplayName()}")
+            if (source == DetectionSource.ACCESSIBILITY) {
+                DiagLog.d { "New content detected via $source: ${metadata.getDisplayName()}" }
+            } else {
+                Log.i(TAG, "New content detected via $source: ${metadata.getDisplayName()}")
+            }
             rememberPicks = source != DetectionSource.ACCESSIBILITY
 
             if (remembered != null) {
@@ -185,9 +195,9 @@ class SubtitleSession(
                 activateTrack(remembered.track, remembered.offsetMs)
             }
 
-            val interactive = source == DetectionSource.MANUAL && rawQuery != null
+            val interactive = requireChoice || (source == DetectionSource.MANUAL && rawQuery != null)
             searchJob = scope.launch {
-                val target = identify(metadata, interactive, rawQuery) ?: return@launch
+                val target = identify(metadata, interactive, rawQuery, catalogCandidates) ?: return@launch
                 searchSubtitles(target, remembered?.track)
             }
             return true
@@ -198,9 +208,10 @@ class SubtitleSession(
      * Works out which film [metadata] is (so providers get its IMDb ID and the wrong same-named film is never
      * used). Returns null when the user has to choose, or when a newer detection replaced this one.
      */
-    private suspend fun identify(metadata: ContentMetadata, interactive: Boolean, rawQuery: String?): ContentMetadata? {
+    private suspend fun identify(metadata: ContentMetadata, interactive: Boolean, rawQuery: String?,
+        catalogCandidates: List<TitleMatch>? = null): ContentMetadata? {
         if (metadata.imdbId != null) return metadata
-        val candidates = resolver.find(metadata)
+        val candidates = catalogCandidates ?: resolver.find(metadata)
 
         synchronized(detectionLock) {
             if (_currentContent.value !== metadata) return null
@@ -256,7 +267,7 @@ class SubtitleSession(
                 return
             }
             // Never override something the user (or a detection) is in the middle of loading
-            if (!playing || activationJob?.isActive == true || searchJob?.isActive == true) return
+            if (!playing || activationJob?.isActive == true || searchJob?.isActive == true || screenCheckJob?.isActive == true) return
             val pick = picks.latestForApp(appPackage) ?: return
             if (abs(positionMs - pick.positionMs) > RESUME_WINDOW_MS) return
 
