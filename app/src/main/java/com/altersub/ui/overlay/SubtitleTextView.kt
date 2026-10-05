@@ -49,6 +49,7 @@ class SubtitleTextView @JvmOverloads constructor(
         color = Color.parseColor("#B3000000") // High-contrast semi-transparent black backing box
         style = Paint.Style.FILL
     }
+    private var drawBox = true
 
     private val bgRect = RectF()
     private val paddingHorizontal = 20f * resources.displayMetrics.density
@@ -69,6 +70,14 @@ class SubtitleTextView @JvmOverloads constructor(
 
     fun setTextColor(colorHex: Int) {
         textPaint.color = colorHex
+        invalidate()
+    }
+
+    /** The box behind the text ([boxArgb] null for none) and the colour of the letters' outline. */
+    fun setBackground(boxArgb: Int?, edgeArgb: Int) {
+        drawBox = boxArgb != null
+        if (boxArgb != null) backgroundPaint.color = boxArgb
+        strokePaint.color = edgeArgb
         invalidate()
     }
 
@@ -124,8 +133,10 @@ class SubtitleTextView @JvmOverloads constructor(
         val boxTop = startY - paddingVertical
         val boxBottom = startY + totalTextHeight + paddingVertical
 
-        bgRect.set(boxLeft, boxTop, boxRight, boxBottom)
-        canvas.drawRoundRect(bgRect, 18f, 18f, backgroundPaint)
+        if (drawBox) {
+            bgRect.set(boxLeft, boxTop, boxRight, boxBottom)
+            canvas.drawRoundRect(bgRect, 18f, 18f, backgroundPaint)
+        }
 
         // Draw stroked text, then fill text for sharp outline
         for (i in lines.indices) {

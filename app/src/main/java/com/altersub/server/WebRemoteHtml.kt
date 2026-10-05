@@ -146,14 +146,21 @@ object WebRemoteHtml {
     .preview { display: grid; place-items: center; position: relative; aspect-ratio: 16 / 9; overflow: hidden;
         border-radius: 22px; background: linear-gradient(160deg, #333442, #171821 70%); margin: 20px 0 26px; }
     .preview-label { position: absolute; top: 14px; left: 16px; color: #C0C0CD; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
-    .sample { position: absolute; left: 16px; right: 16px; bottom: 18%; text-align: center; color: var(--accent);
-        font: 700 23px/1.2 Arial, sans-serif; text-shadow: 0 1px 2px #000, 1px 0 2px #000; }
+    .sample { position: absolute; left: 16px; right: 16px; bottom: 18%; text-align: center; font: 700 23px/1.35 Arial, sans-serif; }
+    .sample span { padding: 2px 10px; border-radius: 8px; color: var(--accent); background: rgba(0, 0, 0, .7);
+        -webkit-box-decoration-break: clone; box-decoration-break: clone; }
     .setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 0; border-bottom: 1px solid var(--line); }
     .setting-label { font-weight: 500; } .setting-label small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; margin-top: 3px; }
     .stepper { display: flex; gap: 6px; } .stepper button { min-width: 44px; padding: 10px 12px; font-size: 13px; }
     .swatches { display: flex; gap: 10px; padding-right: 4px; }
     .swatch { width: 44px; height: 44px; min-height: 44px; padding: 0; border: 5px solid var(--bg); border-radius: 50%; }
     .swatch.active { outline: 2px solid var(--text); outline-offset: 2px; }
+    .setting.stacked { display: grid; justify-content: stretch; gap: 14px; }
+    .backgrounds { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+    .background-option { min-height: 52px; padding: 0; border-radius: 12px; background: linear-gradient(160deg, #565868, #171821 80%);
+        font: 700 15px/1.3 Arial, sans-serif; }
+    .background-option span { padding: 1px 6px; border-radius: 4px; }
+    .background-option.active { outline: 2px solid var(--text); outline-offset: 2px; }
     .tabbar { position: fixed; bottom: calc(12px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
         display: grid; grid-template-columns: repeat(3, 1fr); width: calc(100% - 32px); max-width: 480px;
         padding: 6px; gap: 4px; border: 1px solid var(--line); border-radius: 24px; background: #202026; z-index: 10; }
@@ -336,7 +343,7 @@ object WebRemoteHtml {
         <section id="stylePanel" role="tabpanel" aria-labelledby="styleTab" hidden>
             <div class="section-head"><h2>Make them easy to read.</h2><p class="muted">Changes made here apply to the subtitles on your TV.</p></div>
             <div class="preview" aria-label="Approximate subtitle appearance preview">
-                <span class="preview-label">Preview</span><div class="sample" id="styleSample">The story starts here.</div>
+                <span class="preview-label">Preview</span><div class="sample" id="styleSample"><span id="styleSampleText">The story starts here.</span></div>
             </div>
             <div class="setting">
                 <div class="setting-label">Text size<small id="styleSize">Medium</small></div>
@@ -346,7 +353,8 @@ object WebRemoteHtml {
                 <div class="setting-label">Position<small id="stylePosition">Near the bottom</small></div>
                 <div class="stepper"><button onclick="setStyle('positionStep=-1')" aria-label="Move subtitles up">Up</button><button onclick="setStyle('positionStep=1')" aria-label="Move subtitles down">Down</button></div>
             </div>
-            <div class="setting"><div class="setting-label">Colour<small id="styleColor">Yellow</small></div><div class="swatches" id="styleColors"></div></div>
+            <div class="setting stacked"><div class="setting-label">Background<small id="styleBackground">See-through black</small></div><div class="backgrounds" id="styleBackgrounds" role="group" aria-label="Background"></div></div>
+            <div class="setting"><div class="setting-label">Text colour<small id="styleColor">Yellow</small></div><div class="swatches" id="styleColors"></div></div>
             <button class="ghost wide" onclick="setStyle('reset=1')">Reset appearance</button>
         </section>
     </div>
@@ -987,16 +995,73 @@ object WebRemoteHtml {
         if (await command('/api/style?' + params)) await fetchStatus();
     }
 
+    const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
+    const BACKGROUND_NAMES = { 'translucent-black': 'See-through black', black: 'Solid black',
+        'translucent-white': 'See-through white', white: 'Solid white', none: 'No background' };
+
+    // How a background from the server looks with the chosen text colour: CSS for the box, text and outline
+    function backgroundLook(background, textColor) {
+        let box = 'transparent';
+        if (HEX_COLOR.test(background.box || '') && typeof background.boxOpacity === 'number') {
+            const n = parseInt(background.box.slice(1), 16);
+            box = 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + background.boxOpacity + ')';
+        }
+        const edge = HEX_COLOR.test(background.edge || '') ? background.edge : '#000000';
+        return {
+            box: box,
+            text: HEX_COLOR.test(background.text || '') ? background.text : textColor,
+            outline: [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([x, y]) => x + 'px ' + y + 'px 0 ' + edge).join(', ') + ', 0 0 3px ' + edge
+        };
+    }
+
+    function applyLook(element, look) {
+        element.style.background = look.box;
+        element.style.color = look.text;
+        element.style.textShadow = look.outline;
+    }
+
     function renderStyle(style) {
         if (!style) return;
         setText('styleSize', style.textSizeSp < 26 ? 'Small' : style.textSizeSp < 36 ? 'Medium' : style.textSizeSp < 46 ? 'Large' : 'Extra large');
         setText('stylePosition', style.verticalPosition < .62 ? 'Middle of the screen' : style.verticalPosition < .8 ? 'Below the middle' : 'Near the bottom');
-        setText('styleColor', (style.color || '').replace(/^./, c => c.toUpperCase()));
         const sample = document.getElementById('styleSample');
         sample.style.fontSize = Math.max(16, Math.min(32, style.textSizeSp * .7)) + 'px';
         sample.style.bottom = Math.max(10, (1 - style.verticalPosition) * 100) + '%';
-        const color = (style.palette || {})[style.color];
-        if (/^#[0-9A-Fa-f]{6}$/.test(color || '')) sample.style.color = color;
+        const chosenColor = (style.palette || {})[style.color];
+        const textColor = HEX_COLOR.test(chosenColor || '') ? chosenColor : '#FFE500';
+
+        // Backgrounds: one tile each, showing sample text on it, built once with textContent/aria labels
+        const backgrounds = Array.isArray(style.backgrounds) ? style.backgrounds : [];
+        const current = backgrounds.find(b => b.name === style.background) || {};
+        applyLook(document.getElementById('styleSampleText'), backgroundLook(current, textColor));
+        setText('styleBackground', BACKGROUND_NAMES[style.background] || style.background || '');
+        const tiles = document.getElementById('styleBackgrounds');
+        if (tiles.childElementCount === 0) {
+            for (const background of backgrounds) {
+                const button = document.createElement('button');
+                button.className = 'background-option';
+                button.dataset.background = background.name;
+                const label = BACKGROUND_NAMES[background.name] || background.name;
+                button.setAttribute('aria-label', label);
+                button.title = label;
+                const text = document.createElement('span');
+                text.textContent = 'Aa';
+                text.setAttribute('aria-hidden', 'true');
+                button.appendChild(text);
+                button.addEventListener('click', () => setStyle('background=' + encodeURIComponent(background.name)));
+                tiles.appendChild(button);
+            }
+        }
+        for (const button of tiles.children) {
+            const background = backgrounds.find(b => b.name === button.dataset.background) || {};
+            applyLook(button.firstChild, backgroundLook(background, textColor));
+            button.classList.toggle('active', button.dataset.background === style.background);
+            button.setAttribute('aria-pressed', String(button.dataset.background === style.background));
+        }
+
+        // A light background brings its own (black) text colour, so the colour choice waits until it's dark again
+        const textFixed = HEX_COLOR.test(current.text || '');
+        setText('styleColor', textFixed ? 'Black, on a white background' : (style.color || '').replace(/^./, c => c.toUpperCase()));
 
         // Swatches come from the server's palette, built once with textContent/aria labels (no HTML injection)
         const row = document.getElementById('styleColors');
@@ -1017,6 +1082,7 @@ object WebRemoteHtml {
         for (const button of row.children) {
             button.classList.toggle('active', button.dataset.color === style.color);
             button.setAttribute('aria-pressed', String(button.dataset.color === style.color));
+            button.disabled = textFixed;
         }
     }
 

@@ -10,7 +10,7 @@ Optimized specifically for **Android TV 9 (Pie)** and lower-spec hardware, while
 
 1. **Independent System Overlay (`SYSTEM_ALERT_WINDOW`)**:
    * Uses `TYPE_APPLICATION_OVERLAY` with `FLAG_NOT_FOCUSABLE` and `FLAG_NOT_TOUCHABLE` so remote control clicks pass through to Netflix uninterrupted.
-   * High-contrast cinema yellow text with a 2.5dp black stroke outline and semi-transparent bounding box for 100% legibility on any movie scene.
+   * High-contrast cinema yellow text with a black stroke outline on a see-through black box by default. From the phone, the box can be solid black, see-through or solid white (with black text), or hidden.
    * Hardware-accelerated, zero-allocation rendering on every frame.
 
 2. **Content Detection and Playback Timing**:

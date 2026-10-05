@@ -231,6 +231,21 @@ class WebRemoteServerTest {
         // Unknown colour names are ignored rather than stored
         assertEquals("white", post("/api/style?color=%3Cscript%3E").json().getJSONObject("style").getString("color"))
 
+        // Backgrounds by name, with what the remote needs to preview each one
+        val boxed = post("/api/style?background=translucent-white").json().getJSONObject("style")
+        assertEquals("translucent-white", boxed.getString("background"))
+        assertEquals("translucent-white", post("/api/style?background=bogus").json().getJSONObject("style").getString("background"))
+        val backgrounds = boxed.getJSONArray("backgrounds")
+        assertEquals(SubtitleStyle.BACKGROUNDS.keys.toList(), (0 until backgrounds.length()).map { backgrounds.getJSONObject(it).getString("name") })
+        val translucentWhite = backgrounds.getJSONObject(2)
+        assertEquals("#FFFFFF", translucentWhite.getString("box"))
+        assertEquals(0.7, translucentWhite.getDouble("boxOpacity"), 0.001)
+        assertEquals("#000000", translucentWhite.getString("text"))
+        assertEquals("#FFFFFF", translucentWhite.getString("edge"))
+        val none = backgrounds.getJSONObject(4)
+        assertTrue(none.isNull("box"))
+        assertTrue(none.isNull("text"))
+
         post("/api/style?reset=1").close()
         assertEquals(SubtitleStyle(), controller.subtitleStyle.value)
     }

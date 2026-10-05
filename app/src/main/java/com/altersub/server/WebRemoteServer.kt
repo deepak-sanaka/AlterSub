@@ -15,6 +15,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.Locale
+import kotlin.math.roundToInt
 
 class WebRemoteServer(
     private val controller: RemoteController,
@@ -129,7 +130,7 @@ class WebRemoteServer(
                 }
 
                 uri == "/api/style" && method == Method.POST -> {
-                    // Relative steps and named colours only; SubtitleStyle clamps every value to a legible range
+                    // Relative steps and named colours and backgrounds only; SubtitleStyle clamps every value to a legible range
                     val params = session.parms
                     controller.updateSubtitleStyle { style ->
                         if (params["reset"] == "1") {
@@ -138,7 +139,8 @@ class WebRemoteServer(
                             val stepped = style
                                 .withTextSizeStep(params["sizeStep"]?.toIntOrNull() ?: 0)
                                 .withPositionStep(params["positionStep"]?.toIntOrNull() ?: 0)
-                            params["color"]?.let(stepped::withColor) ?: stepped
+                            val colored = params["color"]?.let(stepped::withColor) ?: stepped
+                            params["background"]?.let(colored::withBackground) ?: colored
                         }
                     }
                     jsonResponse(JSONObject().put("success", true).put("style", styleJson(controller.subtitleStyle.value)))
@@ -333,9 +335,24 @@ class WebRemoteServer(
             .put("colors", JSONArray(SubtitleStyle.COLORS.keys.toList()))
             // Hex values so the remote can show real colour swatches
             .put("palette", JSONObject().apply {
-                SubtitleStyle.COLORS.forEach { (name, argb) -> put(name, String.format(Locale.ROOT, "#%06X", argb and 0xFFFFFF)) }
+                SubtitleStyle.COLORS.forEach { (name, argb) -> put(name, hex(argb)) }
+            })
+            .put("background", style.background)
+            // Each background's box (null for none, with its opacity), forced text colour (null keeps the chosen one)
+            // and outline, so the remote can preview them
+            .put("backgrounds", JSONArray().apply {
+                SubtitleStyle.BACKGROUNDS.forEach { (name, background) ->
+                    put(JSONObject()
+                        .put("name", name)
+                        .put("box", background.boxArgb?.let(::hex) ?: JSONObject.NULL)
+                        .put("boxOpacity", background.boxArgb?.let { ((it ushr 24) / 255.0 * 100).roundToInt() / 100.0 } ?: 0.0)
+                        .put("text", background.textArgb?.let(::hex) ?: JSONObject.NULL)
+                        .put("edge", hex(background.edgeArgb)))
+                }
             })
     }
+
+    private fun hex(argb: Int): String = String.format(Locale.ROOT, "#%06X", argb and 0xFFFFFF)
 
     private fun handleUpload(session: IHTTPSession): Response {
         val files = HashMap<String, String>()

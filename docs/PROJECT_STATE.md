@@ -31,7 +31,7 @@ AlterSub/
 │   │   │   │   │   │   ├── ContentMetadata.kt       # Structured title, season, episode, IMDb ID
 │   │   │   │   │   │   ├── PlaybackStateInfo.kt     # Playing status, time position, speed, package
 │   │   │   │   │   │   ├── SubtitleCue.kt           # Start/end timestamps (ms), text lines
-│   │   │   │   │   │   ├── SubtitleStyle.kt         # User subtitle size/colour/position with clamping
+│   │   │   │   │   │   ├── SubtitleStyle.kt         # User subtitle size/colour/position/background with clamping
 │   │   │   │   │   │   └── SubtitleTrack.kt         # Track metadata (source, URL, language, rating)
 │   │   │   │   │   ├── parser/
 │   │   │   │   │   │   ├── SrtParser.kt             # SRT/WebVTT parser: BOM/UTF-16/Windows-1252 detection, markup + entity cleanup
@@ -75,7 +75,7 @@ AlterSub/
 │   │   │       └── xml/accessibility_service_config.xml # Accessibility config with event throttling
 │   │   └── test/java/com/altersub/
 │   │       ├── core/clock/                          # SubtitleClockTest (position extrapolation), TrackOffsetsTest
-│   │       ├── core/model/SubtitleStyleTest.kt      # Style clamping and colour validation
+│   │       ├── core/model/SubtitleStyleTest.kt      # Style clamping, colour and background validation
 │   │       ├── core/parser/                         # SrtParserTest (encodings, VTT, malformed SRT), SubtitleIndexTest (incl. lines around a moment)
 │   │       ├── core/session/                        # SubtitleSessionTest (races, remembered picks), PickMemoryTest
 │   │       ├── detection/                           # DetectionArbiterTest, TitleSanitizerTest, ScreenTitlePickerTest, AppPackageFilterTest
@@ -115,10 +115,11 @@ AlterSub/
   * **Failures are reported, not fatal**: If a background start is refused (`ForegroundServiceStartNotAllowedException`) or the window can't be added (overlay permission revoked), the reason is published as `overlayError`. It appears in `/api/status` and as a warning on the phone remote, where previously a missing permission crashed the service.
 * **Rendering View**: `SubtitleTextView`.
   * High-visibility cinema yellow text fill (`#FFE500`).
-  * Black stroke outline (`Paint.Style.STROKE`, width = text size ÷ 7) drawn underneath fill so text remains sharp against white backgrounds (e.g. snowy scenes, explosion flashes).
-  * Rounded background box (`#B3000000`) for contrast.
+  * Stroke outline (`Paint.Style.STROKE`, width = text size ÷ 7) drawn underneath fill so text remains sharp against white backgrounds (e.g. snowy scenes, explosion flashes). Black, or white around black text.
+  * Rounded background box, see-through black (`#B3000000`) by default.
   * Responsive scaling: Clamps line width to 90% of screen width to prevent clipping on any aspect ratio or screen size.
-  * **User style** (`SubtitleStyle`): text size (16–60sp), colour (yellow / white / cyan) and vertical position (50–95% down), adjustable from the phone remote. Changes apply live and are saved in SharedPreferences.
+  * **User style** (`SubtitleStyle`): text size (16–60sp), colour (yellow / white / cyan), vertical position (50–95% down) and background, adjustable from the phone remote. Changes apply live and are saved in SharedPreferences.
+  * **Backgrounds** (`SubtitleStyle.BACKGROUNDS`): see-through black (default), solid black, see-through white, solid white (both white boxes use black text outlined in white, overriding the chosen colour, which returns on a dark box), or none (the outline alone).
 
 ### 3.2 Detection Pipeline (DRM Bypassing)
 * **Strategy A — MediaSession Hook (`MediaNotificationListener`)**:
@@ -226,7 +227,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
     * **Adjust timing** (first, because it works whatever the spoken language): **−0.5 s** ("Words appear late") and **+0.5 s** ("Words appear early"), one step per tap. The step picker (0.1 / 0.5 / 1 / 5 s, default 0.5 s, remembered on the phone) changes the buttons' labels too.
     * **Sync to a line**, for when the user understands the spoken language: tap **I hear a line now** the moment someone starts speaking. The TV saves where the subtitles were (`/api/sync/mark`, minus 300 ms for reaction time) and returns the 10 lines either side, with a "Subtitles were here" divider; more lines load in either direction. Picking the line that was heard moves the subtitles so it starts at the saved moment (`/api/sync/line`), with **Undo** in the confirmation.
     * The timer, subtitle pause/resume and "Set time" stay under **Manual timing controls**, distinguished from video playback.
-  * **Style** has an approximate live text preview and controls for size, vertical position, and colour swatches from the server's `palette`. Native buttons, keyboard tab navigation, focus indicators and generous touch targets support phone and keyboard use. Dynamic titles and filenames still use `textContent` exclusively.
+  * **Style** has an approximate live text preview and controls for size, vertical position, background (a tile per option, drawn from the server's `backgrounds`) and text colour swatches from the server's `palette`. On a white background the swatches are disabled and the text is black. Native buttons, keyboard tab navigation, focus indicators and generous touch targets support phone and keyboard use. Dynamic titles and filenames still use `textContent` exclusively.
   * **Redesign validation (2026-10-04)**: local browser checks against sample API data covered PIN errors/pairing, empty and missing-result states, same-name title choices, file upload, offset direction/step/reset, manual seek/pause, and appearance updates. Narrow layouts were checked at 320 px and 390 px without horizontal overflow. JavaScript syntax, all 156 offline unit tests, debug packaging and the shrunk release build passed; one live-network test was skipped. The redesigned page has not yet been tested against the TV.
   * **Timing redesign (2026-10-04)**: checked in a browser at 375 px against a mock TV with a running clock and sample dialogue: the −/+ buttons and the signed number moving together at each step size, Reset (disabled at 0 s), marking a line with the divider landing mid-list, loading earlier lines down to the first one, syncing to an earlier line (timing became positive by the gap), and Undo, with no horizontal overflow. Not yet tried on the TV.
   * **Subtitle search redesign (2026-10-05)**: checked in a browser at 375 px against a mock TV (spinner, two same-name films as groups, lengths filling in, language switch, empty result, Escape, no horizontal overflow), then end to end on the Android TV emulator against the live sources: "under the open sky" listed the 2020 film (Japan, 2 h 6 min) with three English files and their real names, the 2025 film was left out for having none, the lengths read 2:06:15, 2:06:11 and 2:06:15, picking one loaded it on the TV, and the language choice survived an app restart.
@@ -240,7 +241,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
   * `GET /api/lines?aroundMs=<ms>&before=<n>&after=<n>`: More lines around a time, at most 50 each way.
   * `POST /api/sync/line?markMs=<ms>&startMs=<ms>`: Moves the subtitles by `startMs − markMs`, so the heard line starts at the mark; returns `deltaMs` (for Undo) and the new `offsetMs`. Remembered for the title like any offset.
   * `POST /api/seek?positionMs=<ms>`: Sets the clock to the player's on-screen time (for apps that don't publish a MediaSession position). The remote accepts `41:23` / `1:05:10` input.
-  * `POST /api/style?sizeStep=<±n>&positionStep=<±n>&color=<name>` (or `reset=1`): Adjusts subtitle size, vertical position and colour; values are clamped server-side.
+  * `POST /api/style?sizeStep=<±n>&positionStep=<±n>&color=<name>&background=<name>` (or `reset=1`): Adjusts subtitle size, vertical position, colour and background; values are clamped server-side, and unknown colour or background names are ignored.
   * `POST /api/toggle-play`: Manually forces clock play/pause.
   * `POST /api/search?q=<query>`: Searches a typed title, optionally ending in a year; results arrive in `/api/results`.
   * `GET /api/results`: The latest search's files, grouped by title (`title`, `year`, `country`, `runtimeMinutes`, `episode`), each with `id`, `fileName`, `language`, `release`, `source`, `durationMs` (null while being checked, -1 when unreadable), `active` and `lastUsed`. Polled by the phone while its file sheet is open, which also starts the length checks.
@@ -268,7 +269,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
 
 ### 5.1 Automated Unit Tests
 * **Test Runner**: Gradle JUnit 4 on the JVM, with the real `org.json` artifact on the test classpath (Android's stub would throw).
-* **Status (2026-10-05)**: 171 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
+* **Status (2026-10-06)**: 177 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
 * **Test Suites**:
   * [`DetectionArbiterTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/DetectionArbiterTest.kt): MediaSession outranks scraping; a manual choice holds until the session title changes; scraping resumes after sessions end. (Passes)
   * [`SubtitleClockTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/clock/SubtitleClockTest.kt): MediaSession position extrapolation (elapsed time × speed, paused, missing/future snapshot, zero speed). (Passes)
@@ -560,7 +561,7 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 ## 8. Current Project State & Next Steps
 
 * **Current Status**: Prototype / alpha.
-  * **Works today**: builds and 171 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload (named after the file), track selection, per-track offset, one-tap sync to a line the user hears, "Set time", subtitle style, remembered picks restored after restarts or from a one-tap Recent list, and a "which film?" choice when several films share the searched title (or a year in the search).
+  * **Works today**: builds and 177 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload (named after the file), track selection, per-track offset, one-tap sync to a line the user hears, "Set time", subtitle style, remembered picks restored after restarts or from a one-tap Recent list, and a "which film?" choice when several films share the searched title (or a year in the search).
   * **Open issues**: §7.1. Only Netflix and Hotstar have been tried on a real TV (KI-1); the new optional Netflix spoken-title route needs full device validation (KI-26). Screen-title detection is tuned on tests and the emulator's Leanback sample, not yet on real apps' screens.
 * **Artifact Location**: release `app/build/outputs/apk/release/app-release-unsigned.apk` (~1.7 MB, R8-shrunk; needs a release signing config before distribution), debug `app/build/outputs/apk/debug/app-debug.apk` (~9.7 MB from a clean build, unshrunk; incremental debug builds leave dead space and can be much larger).
 * **Recommended Next Steps** (in order):
