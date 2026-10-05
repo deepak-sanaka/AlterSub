@@ -68,7 +68,7 @@ AlterSub/
 │   │   │   │           ├── MainActivity.kt          # TV setup screen: required steps, optional Netflix titles (+ help dialog), phone-remote QR/PIN
 │   │   │   │           └── QrCode.kt                # ZXing QR → 1-px-per-module bitmap, scaled up unfiltered
 │   │   │   └── res/
-│   │   │       ├── drawable/                        # Launcher icons, flat card/button/chip shapes, status icons
+│   │   │       ├── drawable/                        # Notification icon, flat card/button/chip shapes, status icons (logo images: drawable-xhdpi/xxhdpi, mipmap-*, raw/)
 │   │   │       ├── font/                            # AlterSub Sans (app_sans.xml + 3 static TTFs from Google Sans Flex)
 │   │   │       ├── layout/activity_main.xml         # Two-column TV setup layout (plain AppCompat Views); dialog_netflix_help.xml
 │   │   │       ├── values/                          # colors, strings, styles
@@ -87,7 +87,8 @@ AlterSub/
 │   ├── build.gradle.kts                             # App module build configuration
 │   └── proguard-rules.pro                           # R8 rules for release builds (no blanket keeps; see the file)
 ├── docs/
-│   └── PROJECT_STATE.md                             # This file
+│   ├── PROJECT_STATE.md                             # This file
+│   └── logo/                                        # The logo: original artwork, yellow master, and how the app's copies were made
 ├── site/                                        # Public information page for GitHub Pages (index.html, images, favicon)
 ├── .github/workflows/pages.yml                  # Publishes site/ to GitHub Pages, adding the app's UI font
 ├── tools/build_app_font.py                          # Rebuilds the UI font files from upstream Google Sans Flex
@@ -269,7 +270,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
 
 ### 5.1 Automated Unit Tests
 * **Test Runner**: Gradle JUnit 4 on the JVM, with the real `org.json` artifact on the test classpath (Android's stub would throw).
-* **Status (2026-10-06)**: 177 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
+* **Status (2026-10-06)**: 178 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
 * **Test Suites**:
   * [`DetectionArbiterTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/DetectionArbiterTest.kt): MediaSession outranks scraping; a manual choice holds until the session title changes; scraping resumes after sessions end. (Passes)
   * [`SubtitleClockTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/clock/SubtitleClockTest.kt): MediaSession position extrapolation (elapsed time × speed, paused, missing/future snapshot, zero speed). (Passes)
@@ -561,7 +562,7 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 ## 8. Current Project State & Next Steps
 
 * **Current Status**: Prototype / alpha.
-  * **Works today**: builds and 177 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload (named after the file), track selection, per-track offset, one-tap sync to a line the user hears, "Set time", subtitle style, remembered picks restored after restarts or from a one-tap Recent list, and a "which film?" choice when several films share the searched title (or a year in the search).
+  * **Works today**: builds and 178 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload (named after the file), track selection, per-track offset, one-tap sync to a line the user hears, "Set time", subtitle style, remembered picks restored after restarts or from a one-tap Recent list, and a "which film?" choice when several films share the searched title (or a year in the search).
   * **Open issues**: §7.1. Only Netflix and Hotstar have been tried on a real TV (KI-1); the new optional Netflix spoken-title route needs full device validation (KI-26). Screen-title detection is tuned on tests and the emulator's Leanback sample, not yet on real apps' screens.
 * **Artifact Location**: release `app/build/outputs/apk/release/app-release-unsigned.apk` (~1.7 MB, R8-shrunk; needs a release signing config before distribution), debug `app/build/outputs/apk/debug/app-debug.apk` (~9.7 MB from a clean build, unshrunk; incremental debug builds leave dead space and can be much larger).
 * **Recommended Next Steps** (in order):

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notification icon: the logo's speech bubble and lines in white (Android draws notification icons as one-colour silhouettes, so it can't be the logo itself). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:scaleX="0.19"
+        android:scaleY="0.19"
+        android:translateX="2.45"
+        android:translateY="3.79">
+        <path
+            android:pathData="M0,7 A7,7 0 0 1 7,0 H93 A7,7 0 0 1 100,7 V56 A7,7 0 0 1 93,63 H25 L0,86 Z"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="9"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M16,22 H84"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="11"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M23,41 H77"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="9"
+            android:strokeLineCap="round" />
+    </group>
+</vector>

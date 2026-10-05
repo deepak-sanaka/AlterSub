@@ -22,20 +22,20 @@
         android:paddingRight="48dp"
         android:paddingBottom="20dp">
 
-        <!-- Header: name, setup progress, and what to do next -->
+        <!-- Header: logo, setup progress, and what to do next -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <TextView
+            <!-- The logo (docs/logo/), with the app's name in it -->
+            <ImageView
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="AlterSub"
-                android:textColor="@color/accent"
-                android:textSize="30sp"
-                android:textStyle="bold" />
+                android:layout_height="54dp"
+                android:adjustViewBounds="true"
+                android:contentDescription="@string/app_name"
+                android:src="@drawable/logo_header" />
 
             <TextView
                 android:id="@+id/tvReadyChip"

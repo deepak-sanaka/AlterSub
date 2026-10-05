@@ -19,6 +19,8 @@ object WebRemoteHtml {
 <meta name="theme-color" content="#0E0E11">
 <meta name="color-scheme" content="dark">
 <title>AlterSub Remote</title>
+<link rel="icon" type="image/png" href="/images/icon.png">
+<link rel="apple-touch-icon" href="/images/icon.png">
 <style>
 
     @font-face { font-family: "AlterSub Sans"; font-weight: 400; font-display: swap; src: url("/fonts/app-sans-regular.ttf") format("truetype"); }
@@ -36,7 +38,8 @@ object WebRemoteHtml {
     main { max-width: 480px; margin: auto; }
     [hidden] { display: none !important; }
     header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 24px; }
-    .brand { font-size: 19px; font-weight: 700; letter-spacing: -.04em; }
+    .brand { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 700; letter-spacing: -.04em; }
+    .brand img { display: block; flex: none; height: 48px; width: auto; }
     .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
     .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
     .pill.ok { color: var(--ok); } .pill.bad { color: var(--danger); }
@@ -217,7 +220,7 @@ object WebRemoteHtml {
 <body>
 <main>
     <header>
-        <div class="brand">AlterSub Remote</div>
+        <div class="brand"><img src="/images/logo.png" width="74" height="48" alt="AlterSub">Remote</div>
         <div class="pill" id="conn" role="status">Connecting</div>
     </header>
     <div class="warning" id="connectionNotice" role="status" hidden>Reconnecting to your TV. Keep this phone on the same Wi-Fi and leave AlterSub running on the TV.</div>

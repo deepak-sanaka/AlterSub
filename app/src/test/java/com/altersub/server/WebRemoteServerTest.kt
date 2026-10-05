@@ -113,7 +113,8 @@ class WebRemoteServerTest {
     fun setUp() {
         uploadDir = File(tempDir.root, "uploads")
         // Port 0: any free port
-        server = WebRemoteServer(controller, auth, uploadDir, port = 0, fonts = { if (it == "regular") FONT_BYTES else null })
+        server = WebRemoteServer(controller, auth, uploadDir, port = 0, fonts = { if (it == "regular") FONT_BYTES else null },
+            images = { if (it == "logo") LOGO_BYTES else null })
         server.start()
         token = pairedToken()
     }
@@ -470,6 +471,18 @@ class WebRemoteServerTest {
     }
 
     @Test
+    fun testServesTheLogoWithoutPairing() {
+        get("/images/logo.png", token = null).use { response ->
+            assertEquals(200, response.code)
+            assertEquals("image/png", response.header("Content-Type"))
+            assertTrue(response.header("Cache-Control")!!.contains("max-age"))
+            assertTrue(LOGO_BYTES.contentEquals(response.body!!.bytes()))
+        }
+        get("/images/icon.png", token = null).use { assertEquals(404, it.code) } // Not provided by this test
+        get("/images/uploads.png", token = null).use { assertEquals(404, it.code) } // Only the named images
+    }
+
+    @Test
     fun testRecentPicksAreListedAndRestoredInOneTap() {
         fun pick(title: String, year: Int? = null) = PickMemory.Pick(
             content = ContentMetadata(title = title, year = year),
@@ -495,5 +508,6 @@ class WebRemoteServerTest {
 
     private companion object {
         val FONT_BYTES = byteArrayOf(0, 1, 0, 0, 42)
+        val LOGO_BYTES = byteArrayOf(-119, 80, 78, 71, 7)
     }
 }

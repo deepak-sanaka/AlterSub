@@ -23,7 +23,9 @@ class WebRemoteServer(
     private val uploadDir: File,
     port: Int = DEFAULT_PORT,
     /** Bytes of the page's UI font by weight name ("regular", "medium", "bold"), or null if unavailable. */
-    private val fonts: (String) -> ByteArray? = { null }
+    private val fonts: (String) -> ByteArray? = { null },
+    /** Bytes of the page's PNG images by name ("logo", "icon"), or null if unavailable. */
+    private val images: (String) -> ByteArray? = { null }
 ) : NanoHTTPD(port) {
 
     override fun serve(session: IHTTPSession): Response {
@@ -59,6 +61,10 @@ class WebRemoteServer(
                 uri == "/api/unpair" && method == Method.POST -> {
                     auth.revoke(session.headers[RemoteAuth.TOKEN_HEADER])
                     jsonResponse(JSONObject().put("success", true))
+                }
+
+                uri.startsWith(IMAGE_PATH) && method == Method.GET -> {
+                    serveImage(uri.removePrefix(IMAGE_PATH))
                 }
 
                 uri.startsWith(FONT_PATH) && method == Method.GET -> {
@@ -240,6 +246,16 @@ class WebRemoteServer(
         }
     }
 
+    /** The logo and icon for the phone page. Public (no pairing needed) and cached by the browser for a week. */
+    private fun serveImage(fileName: String): Response {
+        val name = IMAGE_FILE.matchEntire(fileName)?.groupValues?.get(1)
+        val bytes = name?.let(images)
+            ?: return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
+        return newFixedLengthResponse(Response.Status.OK, "image/png", ByteArrayInputStream(bytes), bytes.size.toLong()).apply {
+            addHeader("Cache-Control", "public, max-age=604800")
+        }
+    }
+
     private fun handleStatus(): Response {
         val content = controller.currentContent.value
         val activeTrack = controller.activeTrack.value
@@ -411,6 +427,8 @@ class WebRemoteServer(
         private const val TAG = "WebRemoteServer"
         private const val FONT_PATH = "/fonts/"
         private val FONT_FILE = Regex("app-sans-(regular|medium|bold)\\.ttf")
+        private const val IMAGE_PATH = "/images/"
+        private val IMAGE_FILE = Regex("(logo|icon)\\.png")
         const val DEFAULT_PORT = 8080
 
         /** The languages offered on the phone: code, English name, and the name in that language. */

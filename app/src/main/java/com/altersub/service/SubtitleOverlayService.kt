@@ -75,7 +75,7 @@ class SubtitleOverlayService : Service() {
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle(getString(R.string.overlay_service_title))
             .setContentText(getString(R.string.overlay_service_description))
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 

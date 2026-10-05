@@ -98,6 +98,15 @@ class AlterSubApp : Application(), RemoteController {
         return resources.openRawResource(resId).use { it.readBytes() }
     }
 
+    private fun webImage(name: String): ByteArray? {
+        val resId = when (name) {
+            "logo" -> R.raw.web_logo
+            "icon" -> R.raw.web_icon
+            else -> return null
+        }
+        return resources.openRawResource(resId).use { it.readBytes() }
+    }
+
     sealed interface WebRemoteState {
         object Off : WebRemoteState
         data class Running(val port: Int) : WebRemoteState
@@ -119,7 +128,7 @@ class AlterSubApp : Application(), RemoteController {
         if (webRemoteServer != null) return
 
         val server = WebRemoteServer.startOnFirstFreePort(WebRemoteServer.PORTS) { port ->
-            WebRemoteServer(this, remoteAuth, File(cacheDir, "uploads"), port, ::webFont)
+            WebRemoteServer(this, remoteAuth, File(cacheDir, "uploads"), port, ::webFont, ::webImage)
         }
         webRemoteServer = server
         if (server != null) {
