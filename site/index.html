@@ -76,7 +76,8 @@
     .card p { margin-top: 8px; color: var(--muted); font-size: 16px; }
 
     /* Phone remote */
-    .phones { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(12px, 3vw, 24px); margin-top: 40px; }
+    .phones { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(12px, 2vw, 20px); margin-top: 40px; }
+    @media (max-width: 900px) { .phones { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 36px; } }
     .phone { padding: 8px; border-radius: 34px; background: #050506; box-shadow: 0 0 0 1px #2a2a31; }
     .phone img { border-radius: 27px; }
     figure figcaption { margin-top: 16px; }
@@ -174,12 +175,12 @@
                 <article class="card">
                     <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></div>
                     <h3>Finds the right film</h3>
-                    <p>Where an app says what's playing, AlterSub picks it up, checks it against a film catalogue and loads subtitles. If two films share a name, it asks which one you mean.</p>
+                    <p>Where an app says what's playing, AlterSub picks it up, checks it against a film catalogue and loads subtitles. Search on your phone and every film by that name is listed with its year, country and runtime.</p>
                 </article>
                 <article class="card">
                     <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18h2"/></svg></div>
                     <h3>Controlled from your phone</h3>
-                    <p>Scan the code on the TV and the remote opens in your phone's browser, with no app to install. Search, switch subtitle files, upload your own, and fix the timing.</p>
+                    <p>Scan the code on the TV and the remote opens in your phone's browser, with no app to install. Search in any of 10 languages, pick a file, use your own, and fix the timing.</p>
                 </article>
                 <article class="card">
                     <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4h4"/></svg></div>
@@ -203,8 +204,13 @@
             <div class="phones">
                 <figure>
                     <div class="phone"><img src="images/phone-subtitles.png" width="780" height="1688" loading="lazy"
-                        alt="The Subtitles tab: a search box, the subtitle file showing on the TV, and a button to fix the timing"></div>
-                    <figcaption><strong>Subtitles</strong><span>Search for a title, pick a file, or use one from your phone.</span></figcaption>
+                        alt="The Subtitles tab: a search box, the subtitle language set to English, and the subtitle file showing on the TV"></div>
+                    <figcaption><strong>Subtitles</strong><span>Search for a title, in any of 10 subtitle languages.</span></figcaption>
+                </figure>
+                <figure>
+                    <div class="phone"><img src="images/phone-search.png" width="780" height="1688" loading="lazy"
+                        alt="Search results: two films with the same name, each with its year, country and runtime, and their subtitle files with file names and lengths"></div>
+                    <figcaption><strong>Choose a file</strong><span>Grouped by film, with each file's name and length.</span></figcaption>
                 </figure>
                 <figure>
                     <div class="phone"><img src="images/phone-timing.png" width="780" height="1688" loading="lazy"
@@ -228,7 +234,7 @@
                 <li><h3>Install AlterSub</h3><p>Put the app on your Android TV (see below).</p></li>
                 <li><h3>Finish the setup screen</h3><p>Allow the three required steps. Each has its own button.</p></li>
                 <li><h3>Scan the code</h3><p>Point your phone's camera at the QR code on the TV to open the remote.</p></li>
-                <li><h3>Play something</h3><p>Subtitles load on their own when AlterSub recognises the title. Otherwise, search on your phone.</p></li>
+                <li><h3>Play something</h3><p>Subtitles load on their own when AlterSub recognises the title. Otherwise, search on your phone and pick a file.</p></li>
             </ol>
         </div>
     </section>
@@ -294,7 +300,7 @@ adb shell cmd notification allow_listener com.altersub/com.altersub.service.Medi
                 </article>
                 <article class="card">
                     <h3>Where subtitles come from</h3>
-                    <p>AlterSub searches community subtitle sources such as OpenSubtitles, and you can always use your own <code>.srt</code> or <code>.vtt</code> file from your phone.</p>
+                    <p>AlterSub searches community subtitle sources such as OpenSubtitles, in the language you choose (English unless you pick another), and you can always use your own <code>.srt</code> or <code>.vtt</code> file from your phone.</p>
                 </article>
                 <article class="card">
                     <h3>Privacy</h3>
