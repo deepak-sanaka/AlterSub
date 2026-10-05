@@ -32,6 +32,10 @@ When modifying or extending this codebase, **agents must strictly adhere to the 
 ### Rule 4: Subtitle Overlay Window Flags
 * The overlay must always maintain `FLAG_NOT_FOCUSABLE` and `FLAG_NOT_TOUCHABLE` so remote control D-pad clicks pass through directly to the underlying streaming app uninterrupted.
 
+### Rule 5: Never Use `Regex.findAll` (or Repeated `Regex.find`) on Large Text
+* **Reason**: On Android, Kotlin's `Regex.findAll` creates a new `Matcher` for every match, and each native (ICU) matcher holds its own copy of the whole input until it is garbage-collected. Scanning three 90 KB subtitle files this way briefly took ~240 MB of native memory on the emulator.
+* **Prescribed Pattern**: For whole files or other large text, use one `java.util.regex.Matcher` and loop with `matcher.find()` (as `SubtitleDuration` does), or scan lines. `Regex` is fine on short strings such as titles and single lines.
+
 ---
 
 ## 3. Technology Stack & Key Dependencies
