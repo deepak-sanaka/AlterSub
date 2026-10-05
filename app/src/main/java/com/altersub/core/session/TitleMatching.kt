@@ -46,6 +46,12 @@ object TitleMatching {
 
     const val MAX_OPTIONS = 6
 
+    /** Most films a typed search lists at once. */
+    const val MAX_SEARCHED = 4
+
+    private val WHITESPACE = Regex("\\s+")
+    private const val PART_SEPARATORS = ":-–—"
+
     /**
      * [interactive] is true for searches typed on the phone, where the user is there to answer; automatic
      * detections take the best guess instead (and the phone still offers the other matches).
@@ -61,8 +67,14 @@ object TitleMatching {
 
         val sameName = candidates.filter { normalize(it.name) == normalize(metadata.title) }
         metadata.year?.let { year ->
-            val sameYear = sameName.ifEmpty { candidates }.filter { it.year == year }
-            if (sameYear.size == 1) return Decision.Chosen(sameYear.single())
+            // The film from that year: one with the name, else one of its parts ("Dune 2021" is "Dune: Part One"),
+            // else any match. Several from that year leave the choice to the rules below.
+            val parts = candidates.filter { isPartOf(it.name, metadata.title) }
+            for (pool in listOf(sameName, parts, candidates)) {
+                val sameYear = pool.filter { it.year == year }
+                if (sameYear.size == 1) return Decision.Chosen(sameYear.single())
+                if (sameYear.size > 1) break
+            }
         }
 
         return when {
@@ -72,6 +84,34 @@ object TitleMatching {
             interactive -> Decision.Ambiguous(candidates.take(MAX_OPTIONS))
             else -> Decision.Chosen(candidates.first())
         }
+    }
+
+    /**
+     * The films a search typed on the phone lists, in the catalog's order (its most popular first). A year, or a
+     * title typed exactly as the catalog has it, names one film. Otherwise every film sharing the name is listed,
+     * with its parts: IMDb renamed the 2021 "Dune" to "Dune: Part One", so a search for "Dune" found only 1984's.
+     * With no exact name (a partial title or a typo), the closest matches.
+     */
+    fun searchTitles(metadata: ContentMetadata, candidates: List<TitleMatch>, rawQuery: String?): List<TitleMatch> {
+        val decision = decide(metadata, candidates, interactive = true, rawQuery)
+        if (decision is Decision.NoMatch) return emptyList()
+        if (decision is Decision.Chosen) {
+            val typedExactly = rawQuery != null && normalize(rawQuery) != normalize(metadata.title) &&
+                normalize(decision.match.name) == normalize(rawQuery)
+            if (metadata.year != null || typedExactly) return listOf(decision.match)
+        }
+        val related = candidates.filter { normalize(it.name) == normalize(metadata.title) || isPartOf(it.name, metadata.title) }
+        val fallback = (decision as? Decision.Ambiguous)?.options ?: listOf((decision as Decision.Chosen).match)
+        return related.ifEmpty { fallback }.take(MAX_SEARCHED)
+    }
+
+    /** "Dune: Part One" is a part of "Dune": the same title, then a colon or a dash and more. */
+    fun isPartOf(name: String, title: String): Boolean {
+        val full = name.trim().lowercase()
+        val base = title.trim().lowercase().replace(WHITESPACE, " ")
+        if (base.isEmpty() || !full.startsWith(base)) return false
+        val rest = full.substring(base.length).trimStart()
+        return rest.isNotEmpty() && rest[0] in PART_SEPARATORS
     }
 
     /**

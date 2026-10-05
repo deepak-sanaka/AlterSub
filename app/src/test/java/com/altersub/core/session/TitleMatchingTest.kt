@@ -3,7 +3,9 @@ package com.altersub.core.session
 import com.altersub.core.model.ContentMetadata
 import com.altersub.core.session.TitleMatching.Decision
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TitleMatchingTest {
@@ -60,6 +62,62 @@ class TitleMatchingTest {
         assertNull(TitleMatching.verify(ContentMetadata(title = "Under the"), skyResults))
         assertNull(TitleMatching.verify(ContentMetadata(title = "Vertical Video Grid"), listOf(painted)))
         assertNull(TitleMatching.verify(ContentMetadata(title = "Inception"), emptyList()))
+    }
+
+    // Cinemeta's answer for "dune" (2026): the 2021 film is now "Dune: Part One"
+    private val partOne = TitleMatch("tt1160419", "Dune: Part One", 2021)
+    private val partThree = TitleMatch("tt31378509", "Dune: Part Three", 2026)
+    private val partTwo = TitleMatch("tt15239678", "Dune: Part Two", 2024)
+    private val dune1984 = TitleMatch("tt0087182", "Dune", 1984)
+    private val duneResults = listOf(
+        partOne, partThree, partTwo, dune1984,
+        TitleMatch("tt1935156", "Jodorowsky's Dune", 2013),
+        TitleMatch("tt15331462", "Planet Dune", 2021),
+        TitleMatch("tt11835714", "Dune Drifter", 2020)
+    )
+
+    private fun searched(query: String, candidates: List<TitleMatch>): List<TitleMatch> {
+        val parsed = ManualQuery.parse(query)
+        return TitleMatching.searchTitles(ContentMetadata(title = parsed.title, year = parsed.year), candidates, parsed.raw)
+    }
+
+    @Test
+    fun testATypedTitleListsTheFilmAndItsParts() {
+        // Catalog order (most popular first); look-alikes such as "Dune Drifter" aren't parts
+        assertEquals(listOf(partOne, partThree, partTwo, dune1984), searched("dune", duneResults))
+        assertEquals(listOf(sky2025, sky2020), searched("Under the open sky", skyResults))
+    }
+
+    @Test
+    fun testAYearFindsTheRightPart() {
+        assertEquals(listOf(partOne), searched("Dune 2021", duneResults))
+        assertEquals(listOf(dune1984), searched("dune (1984)", duneResults))
+        assertEquals(listOf(sky2020), searched("Under the open sky 2020", skyResults))
+    }
+
+    @Test
+    fun testATitleTypedExactlyNamesOneFilm() {
+        val ww84 = TitleMatch("tt7126948", "Wonder Woman 1984", 2020)
+        val ww = TitleMatch("tt0451279", "Wonder Woman", 2017)
+        assertEquals(listOf(ww84), searched("Wonder Woman 1984", listOf(ww, ww84)))
+        assertEquals(listOf(partTwo), searched("Dune: Part Two", duneResults))
+    }
+
+    @Test
+    fun testWithoutAnExactNameTheClosestMatchesAreListed() {
+        val results = searched("Under the", skyResults)
+        assertEquals(listOf(sky2025, sky2020, painted), results)
+        assertTrue(searched("nothing", emptyList()).isEmpty())
+    }
+
+    @Test
+    fun testParts() {
+        assertTrue(TitleMatching.isPartOf("Dune: Part One", "dune"))
+        assertTrue(TitleMatching.isPartOf("Kill Bill: Vol. 1", "Kill  Bill"))
+        assertTrue(TitleMatching.isPartOf("Spider-Man - No Way Home", "spider-man"))
+        assertFalse(TitleMatching.isPartOf("Dune Drifter", "Dune"))
+        assertFalse(TitleMatching.isPartOf("Jodorowsky's Dune", "Dune"))
+        assertFalse(TitleMatching.isPartOf("Dune", "Dune"))
     }
 
     @Test

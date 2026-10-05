@@ -178,11 +178,7 @@ class SubtitleSession(
         val job = coroutineContext.job
         val base = ContentMetadata(title = query.title, year = query.year)
         val candidates = resolver.find(base)
-        val titles = when (val decision = TitleMatching.decide(base, candidates, interactive = true, rawQuery = query.raw)) {
-            is TitleMatching.Decision.Chosen -> listOf(decision.match)
-            is TitleMatching.Decision.Ambiguous -> decision.options.take(MAX_GROUPS)
-            TitleMatching.Decision.NoMatch -> emptyList()
-        }
+        val titles = TitleMatching.searchTitles(base, candidates, query.raw)
         val groups = if (titles.isEmpty()) {
             // Unknown to the catalog: the sources may still know it by name
             listOf(TitleGroup(base, null, provider.searchAll(base, language), lastUsedFor(base)))
@@ -592,8 +588,8 @@ class SubtitleSession(
         private const val RESUME_WINDOW_MS = 5 * 60_000L
         private const val RECENT_LIMIT = 5
 
-        /** Films searched for one query: a name shared by more than this is narrowed with a year. */
-        private const val MAX_GROUPS = 3
+        /** Films listed for a detected title several share: more than this is narrowed by the user's search. */
+        private const val MAX_GROUPS = 4
 
         // Durations: each needs a download, so a handful at a time and a bounded number per search
         private const val MAX_MEASURED = 15

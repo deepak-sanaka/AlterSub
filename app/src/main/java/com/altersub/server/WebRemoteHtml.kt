@@ -715,7 +715,7 @@ object WebRemoteHtml {
         const section = document.createElement('section');
         section.className = 'title-group';
         section.appendChild(textElement('h3', 'group-title', group.title));
-        const facts = [group.episode, group.year, group.country, group.runtimeMinutes ? runtimeLabel(group.runtimeMinutes) : '',
+        const facts = [group.episode, group.year, countryLabel(group.country), group.runtimeMinutes ? runtimeLabel(group.runtimeMinutes) : '',
             group.files.length + (group.files.length === 1 ? ' file' : ' files')].filter(Boolean);
         section.appendChild(textElement('p', 'group-meta', facts.join(' · ')));
         const files = document.createElement('div');
@@ -749,6 +749,12 @@ object WebRemoteHtml {
         if (ms === null || ms === undefined) return textElement('span', 'duration checking', 'Checking length');
         if (ms < 0) return textElement('span', 'duration', 'Length unknown');
         return textElement('span', 'duration', 'Runs ' + formatTime(ms));
+    }
+
+    // Co-productions list many countries: "United States, Canada +6"
+    function countryLabel(country) {
+        const countries = String(country || '').split(',').map(name => name.trim()).filter(Boolean);
+        return countries.length > 2 ? countries.slice(0, 2).join(', ') + ' +' + (countries.length - 2) : countries.join(', ');
     }
 
     function runtimeLabel(minutes) {
