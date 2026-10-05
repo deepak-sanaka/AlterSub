@@ -39,10 +39,11 @@ class StremioSubtitleProviderTest {
         server.enqueue(
             json(
                 """{"subtitles":[
-                    {"id":"101","url":"https://subs.example/101","lang":"eng"},
+                    {"id":"101","url":"https://subs.example/101","lang":"eng","subtitleFileName":"Inception.2010.1080p.BluRay.x264.srt","releaseFormat":"Blu-ray"},
                     {"id":"102","url":"https://subs.example/102","lang":"spa"},
                     {"id":"103","url":"https://subs.example/103","lang":"english"},
-                    {"id":"104","url":"","lang":"eng"}
+                    {"id":"104","url":"","lang":"eng"},
+                    {"id":"105","url":"https://subs.example/105","lang":"pob"}
                 ]}"""
             )
         )
@@ -52,7 +53,15 @@ class StremioSubtitleProviderTest {
         assertEquals("/subtitles/movie/tt1375666.json", server.takeRequest().path)
         assertEquals(listOf("stremio-101", "stremio-103"), tracks.map { it.id })
         assertEquals("https://subs.example/101", tracks[0].downloadUrl)
-        assertEquals("Inception (2010) [eng]", tracks[0].title)
+        // The file's own name and release when the source gives them, a readable fallback otherwise
+        assertEquals("Inception.2010.1080p.BluRay.x264.srt", tracks[0].fileName)
+        assertEquals("Inception.2010.1080p.BluRay.x264.srt", tracks[0].title)
+        assertEquals("Blu-ray", tracks[0].release)
+        assertEquals("Inception (2010) [english]", tracks[1].title)
+
+        // Portuguese takes OpenSubtitles' Brazilian Portuguese ("pob") too
+        server.enqueue(json("""{"subtitles":[{"id":"105","url":"https://subs.example/105","lang":"pob"},{"id":"101","url":"https://subs.example/101","lang":"eng"}]}"""))
+        assertEquals(listOf("stremio-105"), provider.search(ContentMetadata(title = "Inception", imdbId = "tt1375666"), "pt").map { it.id })
     }
 
     @Test

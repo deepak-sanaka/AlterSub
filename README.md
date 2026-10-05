@@ -21,7 +21,7 @@ Optimized specifically for **Android TV 9 (Pie)** and lower-spec hardware, while
 
 3. **Composite Subtitle Sourcing**:
    * **Tier 1 (Instant Zero-Auth)**: Public Stremio OpenSubtitles v3 mirror (queries OpenSubtitles' massive database without needing any personal API key).
-   * **Tier 2 (Movies Zero-Auth)**: YTS Subtitles public API.
+   * **Tier 2 (Movies Zero-Auth)**: YTS Subtitles public API (currently offline: its endpoint returns 404).
    * **Tier 3 (Official API)**: Configurable OpenSubtitles.com REST API with user API key & token.
    * **Tier 4 (Offline Phone Upload)**: Upload any `.srt` directly from your phone browser.
 
@@ -29,7 +29,7 @@ Optimized specifically for **Android TV 9 (Pie)** and lower-spec hardware, while
    * Ultra-lightweight local HTTP server running on port `8080`.
    * Open `http://<your-tv-ip>:8080` from any phone on the same Wi-Fi:
      * View live detected movie/series name.
-     * Use **Subtitles** to search, choose a file, upload an `.srt` or `.vtt`, or restore a recent pick.
+     * Use **Subtitles** to search: a sheet lists the files found, grouped by film (year, country, runtime), each with its file name, language and length. Pick one, upload an `.srt` or `.vtt`, or restore a recent pick. **Subtitles in** sets the language (10 to choose from, English by default), kept on the TV.
      * Use **Timing** to line subtitles up with the voices: tap **−** if the words appear late or **+** if they appear early (0.1 to 5 s per tap), or, if you understand the language, tap **I hear a line now** when someone speaks and pick the line they said.
      * Use **Style** to preview and change text size, position, and colour.
 

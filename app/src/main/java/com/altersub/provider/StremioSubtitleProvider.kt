@@ -1,6 +1,7 @@
 package com.altersub.provider
 
 import com.altersub.core.model.ContentMetadata
+import com.altersub.core.model.SubtitleLanguages
 import com.altersub.core.model.SubtitleTrack
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -58,17 +59,20 @@ class StremioSubtitleProvider(
                     val lang = subObj.optString("lang", "en")
                     val url = subObj.optString("url", "")
                     val subId = subObj.optString("id", "$imdbId-$i")
+                    val fileName = subObj.optString("subtitleFileName").trim().ifEmpty { null }
 
-                    // Filter for desired language code (e.g. "eng", "en")
-                    if (url.isNotEmpty() && matchesLanguage(lang, language)) {
+                    // Only the chosen language ("en" matches OpenSubtitles' "eng")
+                    if (url.isNotEmpty() && SubtitleLanguages.matches(lang, language)) {
                         tracks.add(
                             SubtitleTrack(
                                 id = "stremio-$subId",
-                                title = "${metadata.getDisplayName()} [$lang]",
+                                title = fileName ?: "${metadata.getDisplayName()} [$lang]",
                                 language = lang,
                                 source = name,
                                 downloadUrl = url,
-                                format = "srt"
+                                format = "srt",
+                                fileName = fileName,
+                                release = subObj.optString("releaseFormat").trim().ifEmpty { null }
                             )
                         )
                     }
@@ -134,15 +138,5 @@ class StremioSubtitleProvider(
         } catch (_: Exception) {
         }
         return null
-    }
-
-    private fun matchesLanguage(trackLang: String, targetLang: String): Boolean {
-        val t = trackLang.lowercase()
-        val target = targetLang.lowercase()
-        return t == target ||
-                (target == "en" && (t == "eng" || t == "english")) ||
-                (target == "es" && (t == "spa" || t == "spanish")) ||
-                (target == "fr" && (t == "fre" || t == "fra" || t == "french")) ||
-                target == "all"
     }
 }

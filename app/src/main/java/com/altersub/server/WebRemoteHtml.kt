@@ -70,12 +70,20 @@ object WebRemoteHtml {
     .search { margin-bottom: 12px; } .search input { border-radius: 18px; min-height: 54px; }
     .search button { min-height: 54px; }
     .help { color: var(--muted); font-size: 12px; }
-    .search-status { margin-top: 18px; font-size: 14px; color: var(--muted); }
-    .search-status:empty { display: none; }
+    .language { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+    .language select { min-height: 40px; max-width: 200px; padding: 0 34px 0 12px; border: 1px solid var(--line); border-radius: 12px;
+        background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23A4A4B0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center / 14px;
+        color: var(--text); font: inherit; font-size: 14px; -webkit-appearance: none; appearance: none; }
+    .language select:focus { border-color: var(--accent); }
+    .search-language { margin-bottom: 8px; }
+    .choice { margin-top: 20px; padding: 18px; border-radius: 20px; background: #1D2130; color: #C8D0EA; font-size: 14px; }
+    .choice button { margin-top: 12px; }
+    .results-button { width: 100%; margin-top: 12px; }
     .selected { margin-top: 20px; padding: 18px; border-radius: 20px; background: #252615; }
     .selected-head { display: flex; align-items: center; gap: 10px; color: var(--accent); font-size: 13px; font-weight: 500; }
     .selected-head svg { width: 22px; height: 22px; }
     .selected-name { font-size: 15px; margin-top: 10px; overflow-wrap: anywhere; }
+    .selected-meta { margin-top: 4px; color: var(--muted); font-size: 12px; }
     .timing-help { margin-top: 20px; text-align: center; }
     .timing-help p { color: var(--muted); font-size: 13px; }
     .timing-help button { margin-top: 10px; }
@@ -155,12 +163,47 @@ object WebRemoteHtml {
     .pin { width: 100%; margin-top: 22px; font-size: 28px !important; letter-spacing: .25em; text-align: center; font-variant-numeric: tabular-nums; }
     .pair-label { display: block; margin-top: 18px; font-size: 13px; color: var(--muted); }
     .pair .warning { margin: 16px 0 0; }
-    .toast { position: fixed; z-index: 20; left: 50%; transform: translateX(-50%); bottom: calc(100px + env(safe-area-inset-bottom));
+    .toast { position: fixed; z-index: 40; left: 50%; transform: translateX(-50%); bottom: calc(100px + env(safe-area-inset-bottom));
         width: calc(100% - 48px); max-width: 456px; border-radius: 16px; padding: 14px 18px; background: #34343E; color: var(--text); font-size: 14px; }
     .toast.error { background: #49241E; color: var(--danger); }
     .toast:not([hidden]) { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .toast-action { flex: none; min-height: 36px; padding: 6px 4px 6px 12px; background: transparent; color: var(--accent); font-weight: 700; }
     .connection-settings { margin-top: 28px; }
+
+    /* File picker: a sheet over the page, grouped by title */
+    body.sheet-open { overflow: hidden; }
+    .sheet-backdrop { position: fixed; inset: 0; z-index: 30; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .62); }
+    .sheet { display: flex; flex-direction: column; width: 100%; max-width: 520px; max-height: calc(100% - 24px);
+        border-radius: 28px 28px 0 0; background: var(--bg); box-shadow: 0 -1px 0 var(--line); }
+    .sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 20px 10px; }
+    .sheet-head h2 { margin-top: 4px; font-size: 22px; overflow-wrap: anywhere; }
+    .icon-button { flex: none; width: 44px; height: 44px; min-height: 44px; padding: 0; border-radius: 50%; font-size: 18px; }
+    .sheet-tools { padding: 0 20px 14px; border-bottom: 1px solid var(--line); }
+    .sheet-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 4px 20px calc(24px + env(safe-area-inset-bottom)); }
+    .loading { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 56px 0; color: var(--muted); font-size: 14px; text-align: center; }
+    .spinner { width: 44px; height: 44px; border: 4px solid var(--surface-2); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .spinner, .duration.checking::before { animation-duration: 2.4s; } }
+    .choose-hint { margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: #1D2130; color: #C8D0EA; font-size: 13px; }
+    .title-group { padding: 18px 0 4px; }
+    .title-group + .title-group { margin-top: 8px; border-top: 1px solid var(--line); }
+    .group-title { font-size: 18px; letter-spacing: -.02em; overflow-wrap: anywhere; }
+    .group-meta { margin-top: 2px; color: var(--muted); font-size: 13px; }
+    .files { display: grid; gap: 8px; margin-top: 12px; }
+    .file { display: block; width: 100%; padding: 14px 16px; border: 1px solid transparent; border-radius: 18px; background: var(--surface);
+        font-weight: 400; text-align: left; }
+    .file.active { border-color: var(--accent); background: #252615; }
+    .file-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .file-name { font-size: 14px; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
+    .file-action { flex: none; color: var(--accent); font-size: 13px; font-weight: 700; }
+    .file-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; color: var(--muted); font-size: 12px; }
+    .tag { padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text); }
+    .tag.last { background: #343223; color: var(--accent); }
+    .duration.checking::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 6px; vertical-align: -1px;
+        border: 2px solid var(--surface-2); border-top-color: var(--muted); border-radius: 50%; animation: spin .8s linear infinite; }
+    .sheet-empty { padding: 40px 4px; text-align: center; }
+    .sheet-empty h3 { font-size: 18px; overflow-wrap: anywhere; }
+    .sheet-empty p { max-width: 310px; margin: 8px auto 0; color: var(--muted); font-size: 14px; }
     @media (max-width: 360px) { .brand { font-size: 17px; } h1 { font-size: 27px; } .surface { padding: 18px; } .stepper button { padding: 10px; } }
 </style>
 </head>
@@ -200,21 +243,22 @@ object WebRemoteHtml {
                 <input type="text" id="searchInput" enterkeyhint="search" autocomplete="off" required placeholder="Movie or show title" aria-label="Movie or show title" aria-describedby="searchHelp">
                 <button class="primary" id="searchButton" type="submit">Find</button>
             </form>
+            <div class="search-language"><label class="language">Subtitles in <select id="languageSelect" aria-label="Subtitle language" onchange="setLanguage(this.value)"></select></label></div>
             <p class="help" id="searchHelp">Add the year if films share a name, e.g. Dune 2021.</p>
-            <p class="search-status" id="searchStatus" role="status"></p>
-            <div id="matchBox" hidden></div>
+            <div class="choice" id="choiceNotice" role="status" hidden>
+                Several films share this title. Pick the subtitle file for the one you’re watching.
+                <button class="primary wide" onclick="openResults()">Choose the film</button>
+            </div>
             <div class="selected" id="selectedTrack" hidden>
                 <div class="selected-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Showing on your TV</div>
                 <div class="selected-name" id="activeTrackName"></div>
+                <div class="selected-meta" id="activeTrackMeta"></div>
                 <div class="timing-help">
                     <p>Subtitles not lining up with the scene?</p>
                     <button class="primary" onclick="showTab('timing')">Fix subtitle timing &#8594;</button>
                 </div>
             </div>
-            <details id="trackOptions" hidden>
-                <summary id="trackSummary">Choose a subtitle file</summary>
-                <div class="tracks" id="trackList"></div>
-            </details>
+            <button class="results-button" id="resultsButton" onclick="openResults()" hidden>Choose another file</button>
             <div class="empty" id="subtitleEmpty">
                 <div class="empty-icon" aria-hidden="true">CC</div>
                 <h3>Start with a title</h3>
@@ -307,6 +351,27 @@ object WebRemoteHtml {
         </section>
     </div>
 </main>
+<div class="sheet-backdrop" id="resultsSheet" hidden onclick="if (event.target === this) closeResults()">
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+        <div class="sheet-head">
+            <div><p class="eyebrow">Subtitle files for</p><h2 id="sheetTitle">Your search</h2></div>
+            <button class="icon-button" id="sheetClose" type="button" aria-label="Close" onclick="closeResults()">✕</button>
+        </div>
+        <div class="sheet-tools">
+            <label class="language">Subtitles in <select id="sheetLanguage" aria-label="Subtitle language" onchange="setLanguage(this.value)"></select></label>
+            <p class="choose-hint" id="sheetChoose" hidden>Several films share this title. Pick the file for the one you’re watching.</p>
+        </div>
+        <div class="sheet-body">
+            <div class="loading" id="sheetLoading" role="status"><span class="spinner" aria-hidden="true"></span><span id="sheetLoadingText">Finding subtitles…</span></div>
+            <div class="sheet-empty" id="sheetEmpty" hidden>
+                <h3 id="sheetEmptyTitle">No subtitles found</h3>
+                <p>Try another language, add the year, or check the spelling. You can also use a subtitle file from your phone.</p>
+                <button class="wide" onclick="closeResults(); document.getElementById('fileUpload').click()">Use a subtitle file</button>
+            </div>
+            <div id="sheetGroups"></div>
+        </div>
+    </div>
+</div>
 <nav class="tabbar" id="tabbar" role="tablist" aria-label="Remote controls" hidden>
     <button id="subtitlesTab" role="tab" aria-controls="subtitlesPanel" aria-selected="true" onclick="showTab('subtitles')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M6 10h5m2 0h5M6 14h3m2 0h7"/></svg>Subtitles</button>
     <button id="timingTab" role="tab" aria-controls="timingPanel" aria-selected="false" tabindex="-1" onclick="showTab('timing')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Timing</button>
@@ -317,8 +382,9 @@ object WebRemoteHtml {
 <script>
     let offsetValue = 0;
     let isPlaying = false;
-    let lastTracksKey = '';
-    let lastActiveId = null;
+    let languagesShown = false;
+    let currentLanguage = 'en';
+    let languageNames = {};
     let activeTrackId = '';
     let statusSequence = 0;
     let noticeTimeout;
@@ -411,6 +477,7 @@ object WebRemoteHtml {
         document.getElementById('remote').hidden = true;
         document.getElementById('tabbar').hidden = true;
         document.getElementById('actionNotice').hidden = true;
+        closeResults();
         document.getElementById('pairCard').hidden = false;
         const error = document.getElementById('pairError');
         error.textContent = message || '';
@@ -499,12 +566,20 @@ object WebRemoteHtml {
         document.getElementById('changeTitle').hidden = !data.title;
         const active = !!data.activeTrackId;
         const state = data.searchState;
-        setText('subtitleState', state === 'choose' ? 'Choose the title in Subtitles' : state === 'searching' ? 'Finding subtitles…' :
-            active ? (data.isPlaying ? 'Subtitles ready · Playing' : 'Subtitles ready · Paused') : state === 'not_found' ? 'Try another title or a subtitle file' :
-            state === 'found' ? 'Choose a file in Subtitles' : 'Find subtitles to get started');
+        const resultsCount = data.resultsCount || 0;
+        setText('subtitleState', state === 'choose' ? 'Pick the film in Subtitles' : state === 'searching' ? 'Finding subtitles…' :
+            active ? (data.isPlaying ? 'Subtitles ready · Playing' : 'Subtitles ready · Paused') : state === 'not_found' ? 'No subtitles found yet' :
+            resultsCount ? 'Pick a subtitle file' : 'Find subtitles to get started');
         document.getElementById('subtitleState').classList.toggle('ready', active);
         document.getElementById('selectedTrack').hidden = !active;
         setText('activeTrackName', data.activeTrack || '');
+        setText('activeTrackMeta', data.activeTrackLanguage || '');
+        document.getElementById('choiceNotice').hidden = state !== 'choose';
+        const resultsButton = document.getElementById('resultsButton');
+        resultsButton.hidden = !resultsCount || state === 'choose';
+        setText('resultsButton', active ? 'Choose another file' : 'See ' + resultsCount + (resultsCount === 1 ? ' subtitle file' : ' subtitle files'));
+        document.getElementById('subtitleEmpty').hidden = active || resultsCount > 0 || state === 'searching' || state === 'choose';
+        renderLanguages(data.languages || [], data.language || 'en');
         document.getElementById('timingEmpty').hidden = active;
         document.getElementById('timingControls').hidden = !active;
 
@@ -526,8 +601,6 @@ object WebRemoteHtml {
 
         renderStyle(data.style);
         renderRecent(data.recent || []);
-        renderMatches(data);
-        renderTracks(data.tracks || [], data.activeTrackId, state);
     }
 
     function textElement(tag, className, text) {
@@ -537,96 +610,158 @@ object WebRemoteHtml {
         return element;
     }
 
-    // Track fields come from uploaders' release names, search queries and scraped screen text, so they are
-    // only ever set as text (never parsed as HTML), and each click handler holds its track id directly
-    function renderTracks(tracks, activeId, state) {
-        const key = JSON.stringify([tracks, activeId, state]);
-        if (key === lastTracksKey) return;
-        lastTracksKey = key;
-        const options = document.getElementById('trackOptions');
-        options.hidden = tracks.length === 0;
-        document.getElementById('subtitleEmpty').hidden = tracks.length > 0 || state === 'searching' || state === 'choose' || state === 'not_found';
-        setText('searchStatus', state === 'searching' ? 'Finding subtitle files…' : state === 'found' && !activeId ? 'Tap a file to use its subtitles.' : '');
-        const list = document.getElementById('trackList');
-        list.textContent = '';
-        if (!tracks.length) return;
-        if (lastActiveId !== (activeId || '')) { options.open = !activeId; lastActiveId = activeId || ''; }
-        setText('trackSummary', (activeId ? 'Change subtitle file' : 'Choose a subtitle file') + ' · ' + tracks.length);
-        const ordered = tracks.filter(t => t.id === activeId).concat(tracks.filter(t => t.id !== activeId));
-        for (const t of ordered) {
-            const item = document.createElement('button');
-            item.type = 'button';
-            item.className = t.id === activeId ? 'track active' : 'track';
-            item.setAttribute('aria-pressed', String(t.id === activeId));
-            item.addEventListener('click', () => selectTrack(t.id));
-            const text = document.createElement('span');
-            text.className = 'track-text';
-            const language = /^(en|eng)$/i.test(t.language || '') ? 'English' : String(t.language || '').toUpperCase();
-            const meta = [language, t.source].filter(Boolean).join(' · ');
-            text.append(textElement('span', 'track-name', t.title), textElement('span', 'track-meta', meta));
-            item.append(text, textElement('span', 'track-action', t.id === activeId ? 'On TV' : 'Use'));
-            list.appendChild(item);
+    // The language picker, on the Subtitles tab and in the file sheet. Built once from the TV's list.
+    function renderLanguages(languages, current) {
+        const selects = [document.getElementById('languageSelect'), document.getElementById('sheetLanguage')];
+        if (!languagesShown && languages.length) {
+            for (const select of selects) {
+                for (const language of languages) {
+                    const label = language.nativeName && language.nativeName !== language.name ? language.name + ' · ' + language.nativeName : language.name;
+                    const option = textElement('option', '', label);
+                    option.value = language.code;
+                    select.appendChild(option);
+                }
+            }
+            languageNames = {};
+            for (const language of languages) languageNames[language.code] = language.name;
+            languagesShown = true;
         }
+        currentLanguage = current;
+        for (const select of selects) if (document.activeElement !== select) select.value = current;
     }
 
-    // Catalog choices and release names are rendered as text only.
-
-    let lastMatchesKey = '';
-    function renderMatches(data) {
-        const state = data.searchState;
-        const matches = data.matches || [];
-        const key = JSON.stringify([state, matches, data.imdbId, data.title]);
-        if (key === lastMatchesKey) return;
-        lastMatchesKey = key;
-
-        const box = document.getElementById('matchBox');
-        box.textContent = '';
-        const others = matches.filter(m => m.imdbId !== data.imdbId);
-        let heading = '';
-        let options = [];
-        let collapsed = false;
-        if (state === 'choose') {
-            heading = 'Which title are you watching?';
-            options = matches;
-        } else if (state === 'not_found') {
-            heading = 'No English subtitles found for ' + data.title + '. ' +
-                (others.length ? 'Choose another match below, or use a subtitle file.' : 'Try another spelling or use a subtitle file.');
-            options = others;
-        } else if (state === 'found' && others.length) {
-            collapsed = true;
-            options = others;
-        }
-        box.hidden = !heading && options.length === 0;
-        if (box.hidden) return;
-
-        let container = box;
-        if (collapsed) {
-            container = document.createElement('details');
-            container.appendChild(textElement('summary', '', 'Not the right title?'));
-            box.appendChild(container);
+    async function setLanguage(code) {
+        if (code === currentLanguage) return;
+        const previous = currentLanguage;
+        if (await command('/api/language?code=' + encodeURIComponent(code))) {
+            currentLanguage = code;
+            for (const id of ['languageSelect', 'sheetLanguage']) document.getElementById(id).value = code;
+            notify('Subtitles in ' + (languageNames[code] || code) + ' from now on.');
+            if (sheetOpen) { lastResultsKey = ''; await fetchResults(); }
+            await fetchStatus();
         } else {
-            box.appendChild(textElement('div', 'notice', heading));
+            for (const id of ['languageSelect', 'sheetLanguage']) document.getElementById(id).value = previous;
         }
-        const list = document.createElement('div');
-        list.className = 'tracks';
-        for (const m of options) {
-            const item = document.createElement('button');
-            item.type = 'button';
-            item.className = 'track';
-            item.addEventListener('click', () => chooseMatch(m.imdbId));
-            const text = document.createElement('div');
-            text.className = 'track-text';
-            text.append(textElement('div', 'track-name', m.title));
-            item.append(text, textElement('span', 'track-action', 'Choose'));
-            list.appendChild(item);
-        }
-        container.appendChild(list);
     }
 
-    async function chooseMatch(imdbId) {
-        showTrackMessage('Finding subtitles for your choice…');
-        if (await command('/api/choose?imdbId=' + encodeURIComponent(imdbId))) {
-            lastMatchesKey = '';
+    // The file sheet. Polls the TV while open: results arrive after the search, then each file's length.
+    // File names, release names and titles come from uploaders and catalogs, so they are only ever set as text.
+    let sheetOpen = false;
+    let sheetTimer = null;
+    let sheetOpener = null;
+    let lastResultsKey = '';
+
+    function openResults(searchingFor) {
+        sheetOpener = document.activeElement;
+        sheetOpen = true;
+        lastResultsKey = '';
+        document.getElementById('resultsSheet').hidden = false;
+        document.body.classList.add('sheet-open');
+        document.getElementById('sheetClose').focus();
+        if (searchingFor) {
+            // Show the spinner at once; polling starts when the TV has the search
+            renderResults({ state: 'searching', query: searchingFor, languageName: languageNames[currentLanguage] || '', groups: [] });
+        } else {
+            startResultsPolling();
+        }
+    }
+
+    function startResultsPolling() {
+        clearInterval(sheetTimer);
+        sheetTimer = setInterval(fetchResults, 1000);
+        fetchResults();
+    }
+
+    function closeResults() {
+        if (!sheetOpen) return;
+        sheetOpen = false;
+        clearInterval(sheetTimer);
+        document.getElementById('resultsSheet').hidden = true;
+        document.body.classList.remove('sheet-open');
+        if (sheetOpener && document.body.contains(sheetOpener)) sheetOpener.focus();
+    }
+
+    async function fetchResults() {
+        if (!sheetOpen) return;
+        const res = await api('/api/results', { method: 'GET' });
+        if (!res || !res.ok || !sheetOpen) return;
+        let data;
+        try { data = await res.json(); } catch (e) { return; }
+        if (sheetOpen) renderResults(data);
+    }
+
+    function renderResults(data) {
+        const key = JSON.stringify(data);
+        if (key === lastResultsKey) return;
+        lastResultsKey = key;
+        const groups = data.groups || [];
+        const languageName = data.languageName || '';
+        const searching = data.state === 'searching';
+        setText('sheetTitle', data.query ? '“' + data.query + '”' : 'Subtitle files');
+        document.getElementById('sheetLoading').hidden = !searching;
+        setText('sheetLoadingText', 'Finding ' + (languageName ? languageName + ' ' : '') + 'subtitles…');
+        document.getElementById('sheetChoose').hidden = searching || data.state !== 'choose';
+        const empty = !searching && groups.length === 0;
+        document.getElementById('sheetEmpty').hidden = !empty;
+        setText('sheetEmptyTitle', data.query ? 'No ' + (languageName ? languageName + ' ' : '') + 'subtitles for “' + data.query + '”' : 'Search for a title to see its subtitle files');
+
+        const container = document.getElementById('sheetGroups');
+        container.textContent = '';
+        if (searching) return;
+        for (const group of groups) container.appendChild(groupElement(group));
+    }
+
+    function groupElement(group) {
+        const section = document.createElement('section');
+        section.className = 'title-group';
+        section.appendChild(textElement('h3', 'group-title', group.title));
+        const facts = [group.episode, group.year, group.country, group.runtimeMinutes ? runtimeLabel(group.runtimeMinutes) : '',
+            group.files.length + (group.files.length === 1 ? ' file' : ' files')].filter(Boolean);
+        section.appendChild(textElement('p', 'group-meta', facts.join(' · ')));
+        const files = document.createElement('div');
+        files.className = 'files';
+        for (const file of group.files) files.appendChild(fileElement(file));
+        section.appendChild(files);
+        return section;
+    }
+
+    function fileElement(file) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = file.active ? 'file active' : 'file';
+        button.setAttribute('aria-pressed', String(!!file.active));
+        button.addEventListener('click', () => useResult(file.id, file.active));
+        const top = document.createElement('span');
+        top.className = 'file-top';
+        top.append(textElement('span', 'file-name', file.fileName), textElement('span', 'file-action', file.active ? 'On TV' : 'Use'));
+        const meta = document.createElement('span');
+        meta.className = 'file-meta';
+        meta.appendChild(textElement('span', 'tag', file.language));
+        if (file.release) meta.appendChild(textElement('span', '', file.release));
+        meta.appendChild(durationElement(file.durationMs));
+        if (file.lastUsed && !file.active) meta.appendChild(textElement('span', 'tag last', 'Last used'));
+        button.append(top, meta);
+        return button;
+    }
+
+    // How long the file runs, to compare with the film's runtime: the right cut ends just before the credits
+    function durationElement(ms) {
+        if (ms === null || ms === undefined) return textElement('span', 'duration checking', 'Checking length');
+        if (ms < 0) return textElement('span', 'duration', 'Length unknown');
+        return textElement('span', 'duration', 'Runs ' + formatTime(ms));
+    }
+
+    function runtimeLabel(minutes) {
+        const hours = Math.floor(minutes / 60);
+        const rest = minutes % 60;
+        return hours ? hours + ' h' + (rest ? ' ' + rest + ' min' : '') : rest + ' min';
+    }
+
+    async function useResult(id, alreadyOn) {
+        if (alreadyOn) { closeResults(); return; }
+        if (await command('/api/use?id=' + encodeURIComponent(id))) {
+            closeResults();
+            notify('Loading subtitles on your TV…');
             await fetchStatus();
         }
     }
@@ -658,14 +793,10 @@ object WebRemoteHtml {
     }
 
     async function restoreRecent(key) {
-        showTrackMessage('Loading your saved subtitles…');
-        if (await command('/api/restore?key=' + encodeURIComponent(key))) await fetchStatus();
-    }
-
-    function showTrackMessage(message) {
-        lastTracksKey = '';
-        document.getElementById('subtitleEmpty').hidden = true;
-        setText('searchStatus', message);
+        if (await command('/api/restore?key=' + encodeURIComponent(key))) {
+            notify('Loading your saved subtitles…');
+            await fetchStatus();
+        }
     }
 
     async function adjustOffset(delta) {
@@ -887,30 +1018,17 @@ object WebRemoteHtml {
         if (await command('/api/toggle-play')) await fetchStatus();
     }
 
-    async function selectTrack(id) {
-        if (await command('/api/select-track?id=' + encodeURIComponent(id))) {
-            notify('Loading selected subtitles…');
-            await fetchStatus();
-        }
-    }
-
     async function searchManual() {
         const input = document.getElementById('searchInput');
         const query = input.value.trim();
         if (!query) return;
         input.blur();
-        const button = document.getElementById('searchButton');
-        button.disabled = true;
-        button.textContent = 'Finding…';
-        showTrackMessage('Finding subtitles for ' + query + '…');
-        try {
-            if (await command('/api/search?q=' + encodeURIComponent(query))) {
-                lastMatchesKey = '';
-                await fetchStatus();
-            } else { lastTracksKey = ''; await fetchStatus(); }
-        } finally {
-            button.disabled = false;
-            button.textContent = 'Find';
+        openResults(query);
+        if (await command('/api/search?q=' + encodeURIComponent(query))) {
+            startResultsPolling();
+            fetchStatus();
+        } else {
+            closeResults();
         }
     }
 
@@ -919,7 +1037,7 @@ object WebRemoteHtml {
         const file = input.files[0];
         const formData = new FormData();
         formData.append('subtitle', file);
-        showTrackMessage('Adding ' + file.name + '…');
+        notify('Adding ' + file.name + '…');
         if (await command('/api/upload', { body: formData })) {
             notify('Loading your subtitle file…');
             await fetchStatus();
@@ -931,7 +1049,6 @@ object WebRemoteHtml {
         if (!confirm('Disconnect this phone? Scan the QR code on the TV to connect again.')) return;
         if (!await command('/api/unpair')) return;
         saveToken('');
-        lastTracksKey = '';
         showPairing('Phone disconnected. Scan the TV’s QR code to reconnect.');
     }
 
@@ -958,6 +1075,9 @@ object WebRemoteHtml {
         event.preventDefault();
         showTab(tabs[next]);
         document.getElementById(tabs[next] + 'Tab').focus();
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && sheetOpen) closeResults();
     });
     renderSteps();
     setInterval(fetchStatus, 2000);

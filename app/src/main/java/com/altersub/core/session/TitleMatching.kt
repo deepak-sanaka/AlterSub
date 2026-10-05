@@ -84,15 +84,6 @@ object TitleMatching {
         return metadata.year?.let { year -> sameName.firstOrNull { it.year == year } } ?: sameName.firstOrNull()
     }
 
-    /**
-     * The films worth offering on the phone: every film sharing the title when there are several, otherwise the
-     * catalog's top results (a search for a full title returns many loosely related films).
-     */
-    fun options(metadata: ContentMetadata, candidates: List<TitleMatch>): List<TitleMatch> {
-        val sameName = candidates.filter { normalize(it.name) == normalize(metadata.title) }
-        return (if (sameName.size >= 2) sameName else candidates).take(MAX_OPTIONS)
-    }
-
     /** "Under the Open Sky" == "under the open sky"; punctuation and "&"/"and" differences don't matter. */
     fun normalize(title: String): String = title.lowercase()
         .replace("&", " and ")

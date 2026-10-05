@@ -2,7 +2,10 @@ package com.altersub.server
 
 import android.util.Log
 import com.altersub.core.model.SubtitleCue
+import com.altersub.core.model.SubtitleLanguages
 import com.altersub.core.model.SubtitleStyle
+import com.altersub.core.model.SubtitleTrack
+import com.altersub.core.session.TitleGroup
 import fi.iki.elonen.NanoHTTPD
 import java.io.ByteArrayInputStream
 import org.json.JSONArray
@@ -147,29 +150,31 @@ class WebRemoteServer(
                     jsonResponse(JSONObject().put("success", true).put("isPlaying", clock.isPlaying.value))
                 }
 
-                uri == "/api/select-track" && method == Method.POST -> {
-                    val trackId = session.parms["id"] ?: ""
-                    val track = controller.availableTracks.value.find { it.id == trackId }
-                    if (track != null) {
-                        controller.selectTrack(track)
-                        jsonResponse(JSONObject().put("success", true))
-                    } else {
-                        jsonResponse(JSONObject().put("error", "Track not found"), Response.Status.NOT_FOUND)
-                    }
-                }
-
                 uri == "/api/search" && method == Method.POST -> {
                     val query = session.parms["q"] ?: ""
                     if (query.isNotBlank()) controller.searchByText(query)
                     jsonResponse(JSONObject().put("success", true))
                 }
 
-                // Which film the user meant, when several share the title
-                uri == "/api/choose" && method == Method.POST -> {
-                    if (controller.chooseMatch(session.parms["imdbId"] ?: "")) {
+                // The phone's file picker: polled while it's open, which also starts reading each file's length
+                uri == "/api/results" && method == Method.GET -> {
+                    controller.onSearchResultsViewed()
+                    jsonResponse(resultsJson())
+                }
+
+                uri == "/api/use" && method == Method.POST -> {
+                    if (controller.useSearchResult(session.parms["id"] ?: "")) {
                         jsonResponse(JSONObject().put("success", true))
                     } else {
-                        jsonResponse(JSONObject().put("error", "Not one of the matches"), Response.Status.NOT_FOUND)
+                        jsonResponse(JSONObject().put("error", "That file is no longer listed. Search again."), Response.Status.NOT_FOUND)
+                    }
+                }
+
+                uri == "/api/language" && method == Method.POST -> {
+                    if (controller.setSubtitleLanguage(session.parms["code"] ?: "")) {
+                        jsonResponse(JSONObject().put("success", true).put("language", controller.subtitleLanguage.value))
+                    } else {
+                        jsonResponse(JSONObject().put("error", "Unknown language"), Response.Status.BAD_REQUEST)
                     }
                 }
 
@@ -236,41 +241,73 @@ class WebRemoteServer(
     private fun handleStatus(): Response {
         val content = controller.currentContent.value
         val activeTrack = controller.activeTrack.value
-        val tracks = controller.availableTracks.value
-
-        val tracksArray = JSONArray()
-        for (t in tracks) {
-            tracksArray.put(
-                JSONObject()
-                    .put("id", t.id)
-                    .put("title", t.title)
-                    .put("language", t.language)
-                    .put("source", t.source)
-            )
-        }
 
         val json = JSONObject()
             .put("title", content?.getDisplayName() ?: "")
-            .put("activeTrack", activeTrack?.title ?: "")
+            .put("activeTrack", activeTrack?.let { it.fileName ?: it.title } ?: "")
             .put("activeTrackId", activeTrack?.id ?: "")
+            .put("activeTrackLanguage", activeTrack?.let { languageName(it) } ?: "")
             .put("offsetMs", controller.clock.userOffsetMs.value)
             .put("positionMs", controller.clock.getPositionMs())
             .put("isPlaying", controller.clock.isPlaying.value)
             .put("overlayRunning", controller.overlayRunning.value)
             .put("overlayError", controller.overlayError.value ?: "")
             .put("style", styleJson(controller.subtitleStyle.value))
-            .put("tracks", tracksArray)
             .put("recent", recentJson(content?.contentKey))
             .put("searchState", controller.searchState.value.name.lowercase())
-            .put("imdbId", content?.imdbId ?: "")
-            .put("matches", JSONArray().apply {
-                for (match in controller.matches.value) {
-                    put(JSONObject().put("imdbId", match.imdbId).put("title", match.displayName))
-                }
-            })
+            .put("resultsCount", controller.searchResults.value.groups.sumOf { it.tracks.size })
+            .put("language", controller.subtitleLanguage.value)
+            .put("languages", LANGUAGES_JSON)
 
         return jsonResponse(json)
     }
+
+    /**
+     * Search results for the phone's picker, grouped by title. File names, release names and titles come from
+     * uploaders and catalogs: the page renders them with textContent only (KI-8).
+     */
+    private fun resultsJson(): JSONObject {
+        val results = controller.searchResults.value
+        val durations = controller.subtitleDurations.value
+        val activeId = controller.activeTrack.value?.id
+        return JSONObject()
+            .put("state", controller.searchState.value.name.lowercase())
+            .put("query", results.query)
+            .put("language", results.language.ifEmpty { controller.subtitleLanguage.value })
+            .put("languageName", SubtitleLanguages.byCode(results.language.ifEmpty { controller.subtitleLanguage.value })?.name ?: "")
+            .put("groups", JSONArray().apply { for (group in results.groups) put(groupJson(group, durations, activeId)) })
+    }
+
+    private fun groupJson(group: TitleGroup, durations: Map<String, Long>, activeId: String?): JSONObject {
+        val content = group.content
+        val details = group.details
+        return JSONObject()
+            .put("title", content.title)
+            .put("year", details?.year ?: content.year ?: JSONObject.NULL)
+            .put("country", details?.country ?: JSONObject.NULL)
+            .put("runtimeMinutes", details?.runtimeMinutes ?: JSONObject.NULL)
+            .put("episode", if (content.isEpisode) "S%02dE%02d".format(Locale.ROOT, content.season, content.episode) else JSONObject.NULL)
+            .put("files", JSONArray().apply {
+                for (track in group.tracks) {
+                    val duration = durations[track.id]
+                    put(
+                        JSONObject()
+                            .put("id", track.id)
+                            .put("fileName", track.fileName ?: track.title)
+                            .put("language", languageName(track))
+                            .put("release", track.release ?: JSONObject.NULL)
+                            .put("source", track.source)
+                            // null: still being checked; -1: couldn't be read
+                            .put("durationMs", duration ?: JSONObject.NULL)
+                            .put("active", track.id == activeId)
+                            .put("lastUsed", track.id == group.lastUsedTrackId)
+                    )
+                }
+            })
+    }
+
+    private fun languageName(track: SubtitleTrack): String =
+        if (track.localFilePath != null) "Your file" else SubtitleLanguages.nameOf(track.language)
 
     /** Remembered picks other than what is loaded now, for one-tap restore. */
     private fun recentJson(currentKey: String?): JSONArray {
@@ -358,6 +395,13 @@ class WebRemoteServer(
         private const val FONT_PATH = "/fonts/"
         private val FONT_FILE = Regex("app-sans-(regular|medium|bold)\\.ttf")
         const val DEFAULT_PORT = 8080
+
+        /** The languages offered on the phone: code, English name, and the name in that language. */
+        private val LANGUAGES_JSON = JSONArray().apply {
+            for (language in SubtitleLanguages.ALL) {
+                put(JSONObject().put("code", language.code).put("name", language.name).put("nativeName", language.nativeName))
+            }
+        }
 
         /**
          * People tap a beat after a line starts (reaction time, plus the request reaching the TV), so the mark is

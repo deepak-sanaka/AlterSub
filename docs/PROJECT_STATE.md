@@ -38,7 +38,7 @@ AlterSub/
 │   │   │   │   │   │   └── SubtitleIndex.kt         # Binary search index (overlap-aware) + next-boundary calculator
 │   │   │   │   │   └── session/
 │   │   │   │   │       ├── PickMemory.kt            # Remembered picks: track, offset, progress and app per title (persisted)
-│   │   │   │   │       ├── TitleMatching.kt         # Which film a title means: year parsing, same-name films, ask vs. guess
+│   │   │   │   │       ├── TitleMatching.kt         # Which film a title means: year parsing, same-name films, which films to search
 │   │   │   │   │       └── SubtitleSession.kt       # Detection → search → download → active track (race-safe, JVM-testable)
 │   │   │   │   ├── detection/
 │   │   │   │   │   ├── AppPackageFilter.kt          # Target streaming apps (Netflix, Prime, Disney+, etc.)
@@ -175,18 +175,18 @@ AlterSub/
 
 * **Remembered picks (`PickMemory`, owned by `SubtitleSession`)**:
   * Every track the user chose (search, track pick, upload, restore) or that a media-session title led to is remembered with its offset, playback position and the streaming app it played in; screen-scraped guesses are not. Stored as JSON in `SharedPreferences` (`subtitle_picks`), at most 10, newest first; position-only updates are written at most every 30 s.
-  * Detecting or searching a remembered title brings back its track and offset at once (the search still runs, for alternatives).
+  * Detecting a remembered title brings back its track and offset at once (the search still runs, for alternatives). In a typed search, the remembered file is marked **Last used**, and picking it brings its offset back.
   * When nothing is loaded and a streaming app reports playback within 5 minutes of where that app's last pick left off, the pick is restored. That is how Netflix content (no title, KI-26) is recognised after a restart or when resuming a film later. A position far away (e.g. a different film starting from 0) or another app is ignored.
   * The phone page lists recent picks (`recent` in `/api/status`) for one-tap restore (`POST /api/restore?key=`).
 
 ### 3.4 Multi-Source Subtitle Sourcing (`CompositeSubtitleProvider`)
 **Identifying the film first** (`SubtitleSession` + `CinemetaTitleResolver` + `TitleMatching`): before any subtitle search, the title is looked up in Stremio's Cinemeta catalog, because several films can share a name and the catalog doesn't list the wanted one first. Found on a real TV: "Under the Open Sky" resolved to a 2025 film with no subtitles instead of the 2020 film being watched.
-* One film with that exact name → it is used, and its IMDb ID and year are passed to every provider.
-* Several (remakes, same-name films) → a search typed on the phone stops and the phone asks which one (`searchState: choose`, `matches`); automatic detections take the best guess and the phone offers the others under "Not the right film?".
-* A year in the typed search ("Under the Open Sky 2020", "(2020)") picks directly; a title ending in a number ("Wonder Woman 1984") is matched as typed first. Future years and bare numbers ("2012", "Blade Runner 2049") are treated as title text.
-* No exact name (partial title or typo) → the phone offers the top matches. Nothing in the catalog → providers search by title as before.
-* No subtitles for the chosen film → `searchState: not_found`, and the phone offers the other matches or an upload.
-* A remembered pick already knows its film, so the question isn't asked again, unless the typed year names a different film.
+* **Automatic detections** take the catalog's best guess for the title: the film with exactly that name (the year settling a tie), and its IMDb ID and year are passed to every provider. Its files form one group in `results`, and the first is shown.
+* **A search typed on the phone** never guesses and never changes the TV until the user picks a file: every film it could mean is searched at once (up to 3: the one exact name, the same-name films, or the closest matches for a partial title), and each one's files are listed as a group with the film's **year, country and runtime** (Cinemeta's `/meta` endpoint, cached). Films with no files in the chosen language are left out. Nothing in the catalog → providers search by title, as one group.
+* A year in the typed search ("Under the Open Sky 2020", "(2020)") narrows it to that film; a title ending in a number ("Wonder Woman 1984") is matched as typed first. Future years and bare numbers ("2012", "Blade Runner 2049") are treated as title text.
+* A detected title several films share (Netflix titles with `requireChoice`) is listed the same way, and `searchState` is `choose` until the user picks a file.
+* **Subtitle language**: one of 10 (English by default; Spanish, French, German, Portuguese, Italian, Hindi, Arabic, Chinese, Japanese), picked on the phone and kept on the TV (`SharedPreferences` "subtitles"). Every search asks only for that language (`SubtitleLanguages` maps it to each source's labels, e.g. OpenSubtitles' `eng` or `pob`). Changing it searches the shown results again in the new language; a title already showing switches to its first file in that language.
+* **File details**: the file's own name and release (OpenSubtitles' `subtitleFileName` and `releaseFormat`), its language, and how long it runs. The length comes from downloading the file (`SubtitleDuration`: the latest cue end), done only while the phone is showing the results, 3 at a time and at most 15 per search; the download is cached, so picking that file is then instant.
 
 Searches all sources concurrently using Kotlin coroutines `async { ... }`. All providers share one `OkHttpClient` (`Http.client`) and use `Call.await()`, so cancelling a superseded search also cancels its in-flight HTTP requests. Every response is closed with `use { }`.
 > ⚠️ In the current build **only the Stremio source can return results** in the automatic flow (KI-2).
@@ -199,7 +199,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
 2. **YTS Mirror (`YtsSubtitleProvider`)**:
    * Queries `https://yts-subs.com/api/v1/movie/{imdb_id}` for movies.
    * Downloads and unpacks zipped `.srt` files on the fly.
-   * **Currently unreachable**: it requires an IMDb ID, which detection never provides (KI-2). The endpoint itself has not been verified.
+   * **Dead**: the endpoint returns 404 (an HTML page) for every film, checked on 2026-10-05 (KI-2).
 3. **Official OpenSubtitles REST API (`OpenSubtitlesApiProvider`)**:
    * Interfaces with `https://api.opensubtitles.com/api/v1/subtitles`.
    * Enabled only when an API key is set via `updateCredentials()`. **Nothing calls it and there is no settings UI**, so it is never enabled (KI-2).
@@ -218,7 +218,8 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
   * **One phone at a time.** While a phone is paired, `/api/pair` returns 409 (even with the right PIN, without counting as a wrong guess), and the TV hides the QR/PIN and shows "Phone paired" with the address. Unpair from the TV (**Unpair phone**) or from the phone's **TV connection** disclosure (**Disconnect this phone**, `POST /api/unpair`). The token persists across restarts (`SharedPreferences`; older builds' multi-phone lists keep only the newest).
   * The TV setup screen has two columns that start and end level: on the left, **Required** steps (overlay, with **Test subtitles** once allowed; screen titles; play/pause) and **Optional** extras (Netflix titles, with a neutral status icon so it never counts as a missing step); on the right, the phone remote. Every action button is the same size (132 × 44 dp), and the next-step hint sits in the header. The whole screen fits 960 × 540 dp without scrolling.
   * The TV's "Phone remote" card has a status chip (Waiting for phone / Paired / Locked / Off), the QR code with three short scan steps, the address in large type (`192.168.x.x:8080`, no `http://` needed) with the PIN, and **Turn off / Turn on** (persisted).
-* **Phone page**: single self-contained page; nothing loads from the internet. The UI font is served by the TV (`GET /fonts/app-sans-{regular,medium,bold}.ttf`, public, cached for a week, `font-display: swap`). Three bottom tabs show one task at a time: **Subtitles** (search, catalog choices, selected file, other files, uploads and recent picks), **Timing**, and **Style**. The shared header shows the current title and subtitle state, plus TV connection status and a reconnect notice. Failed commands display the server's error instead of implying success; stale status responses cannot replace newer state.
+* **Phone page**: single self-contained page; nothing loads from the internet. The UI font is served by the TV (`GET /fonts/app-sans-{regular,medium,bold}.ttf`, public, cached for a week, `font-display: swap`). Three bottom tabs show one task at a time: **Subtitles** (search with a language picker, the file showing on the TV, uploads and recent picks), **Timing**, and **Style**. The shared header shows the current title and subtitle state, plus TV connection status and a reconnect notice. Failed commands display the server's error instead of implying success; stale status responses cannot replace newer state.
+  * **Subtitles**: **Find** opens a sheet with a spinner while the TV searches, then the files grouped by film: a header with the film's name, year, country, runtime and file count, and a card per file with its own file name, language, release and how long it runs (filled in as each is checked, "Checking length" until then). Tapping a card shows that file on the TV and closes the sheet. **Choose another file** opens the same sheet for the latest results. A **Subtitles in** picker (on the tab and in the sheet) sets the language; changing it searches again. No results → a message suggesting another language, the year, or a file of your own.
   * **Timing**, top to bottom:
     * The current timing as one signed number, shown as a delay: **+1.5 s** shows subtitles later, **−0.5 s** sooner, **0 s** is the file's own timing. **Reset** is always there (greyed out at 0 s). The sign matches the buttons below, so no "earlier"/"later" wording can contradict a tap. (The clock's offset has the opposite sign: it is added to the cue time.)
     * A tip: timing is easiest to set near the start of a film or episode, where the first time someone speaks is simple to match with the first subtitle.
@@ -228,11 +229,12 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
   * **Style** has an approximate live text preview and controls for size, vertical position, and colour swatches from the server's `palette`. Native buttons, keyboard tab navigation, focus indicators and generous touch targets support phone and keyboard use. Dynamic titles and filenames still use `textContent` exclusively.
   * **Redesign validation (2026-10-04)**: local browser checks against sample API data covered PIN errors/pairing, empty and missing-result states, same-name title choices, file upload, offset direction/step/reset, manual seek/pause, and appearance updates. Narrow layouts were checked at 320 px and 390 px without horizontal overflow. JavaScript syntax, all 156 offline unit tests, debug packaging and the shrunk release build passed; one live-network test was skipped. The redesigned page has not yet been tested against the TV.
   * **Timing redesign (2026-10-04)**: checked in a browser at 375 px against a mock TV with a running clock and sample dialogue: the −/+ buttons and the signed number moving together at each step size, Reset (disabled at 0 s), marking a line with the divider landing mid-list, loading earlier lines down to the first one, syncing to an earlier line (timing became positive by the gap), and Undo, with no horizontal overflow. Not yet tried on the TV.
+  * **Subtitle search redesign (2026-10-05)**: checked in a browser at 375 px against a mock TV (spinner, two same-name films as groups, lengths filling in, language switch, empty result, Escape, no horizontal overflow), then end to end on the Android TV emulator against the live sources: "under the open sky" listed the 2020 film (Japan, 2 h 6 min) with three English files and their real names, the 2025 film was left out for having none, the lengths read 2:06:15, 2:06:11 and 2:06:15, picking one loaded it on the TV, and the language choice survived an app restart.
 * **Endpoints**:
   * `GET /`: Serves complete, zero-dependency dark-mode HTML/CSS/JS remote.
   * `POST /api/pair?pin=<pin>`: Exchanges the TV's PIN for a token (403 wrong PIN or screen closed, 409 another phone is paired, 429 locked).
   * `POST /api/unpair`: The paired phone unpairs itself.
-  * `GET /api/status`: Returns JSON with active movie title, active subtitle track, +/- ms offset, clock position (`positionMs`, excluding offset), play state, and track candidates, plus `overlayRunning` and `overlayError`.
+  * `GET /api/status`: Returns JSON with active movie title, active subtitle file (`activeTrack`, its name; `activeTrackLanguage`), +/- ms offset, clock position (`positionMs`, excluding offset), play state, `searchState` (`searching`, `choose`, `not_found`, `found`, `idle`), `resultsCount`, the subtitle `language` and the 10 `languages` offered, plus `overlayRunning` and `overlayError`.
   * `POST /api/offset?delta=<ms>`: Fine-tunes subtitle sync delay.
   * `POST /api/sync/mark`: Saves the subtitle time the user heard a line at (`markMs`, 300 ms before the request arrives) and returns the 10 lines on either side (`startMs`, `text`). 409 when no subtitles are loaded.
   * `GET /api/lines?aroundMs=<ms>&before=<n>&after=<n>`: More lines around a time, at most 50 each way.
@@ -240,9 +242,10 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
   * `POST /api/seek?positionMs=<ms>`: Sets the clock to the player's on-screen time (for apps that don't publish a MediaSession position). The remote accepts `41:23` / `1:05:10` input.
   * `POST /api/style?sizeStep=<±n>&positionStep=<±n>&color=<name>` (or `reset=1`): Adjusts subtitle size, vertical position and colour; values are clamped server-side.
   * `POST /api/toggle-play`: Manually forces clock play/pause.
-  * `POST /api/select-track?id=<id>`: Switches active subtitle track with 1 tap.
-  * `POST /api/search?q=<query>`: Searches a typed title, optionally ending in a year.
-  * `POST /api/choose?imdbId=<id>`: The film the user meant, from `matches` in `/api/status` (with `searchState`: `searching`, `choose`, `not_found`, `found`, `idle`).
+  * `POST /api/search?q=<query>`: Searches a typed title, optionally ending in a year; results arrive in `/api/results`.
+  * `GET /api/results`: The latest search's files, grouped by title (`title`, `year`, `country`, `runtimeMinutes`, `episode`), each with `id`, `fileName`, `language`, `release`, `source`, `durationMs` (null while being checked, -1 when unreadable), `active` and `lastUsed`. Polled by the phone while its file sheet is open, which also starts the length checks.
+  * `POST /api/use?id=<id>`: Shows a listed file; its title becomes what's playing. 404 if it isn't listed.
+  * `POST /api/language?code=<code>`: Changes and keeps the subtitle language (400 if not one of the 10).
   * `POST /api/upload`: Receives multipart `.srt` file upload from phone.
 
 ---
@@ -265,7 +268,7 @@ Searches all sources concurrently using Kotlin coroutines `async { ... }`. All p
 
 ### 5.1 Automated Unit Tests
 * **Test Runner**: Gradle JUnit 4 on the JVM, with the real `org.json` artifact on the test classpath (Android's stub would throw).
-* **Status (2026-10-04)**: 159 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
+* **Status (2026-10-05)**: 171 tests, all passing offline. The one live-network test (`StremioSubtitleProviderLiveTest`) is skipped unless run with `-PliveTests`.
 * **Test Suites**:
   * [`DetectionArbiterTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/detection/DetectionArbiterTest.kt): MediaSession outranks scraping; a manual choice holds until the session title changes; scraping resumes after sessions end. (Passes)
   * [`SubtitleClockTest`](file:///c:/Users/deepa/AlterSub/app/src/test/java/com/altersub/core/clock/SubtitleClockTest.kt): MediaSession position extrapolation (elapsed time × speed, paused, missing/future snapshot, zero speed). (Passes)
@@ -476,12 +479,12 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 #### KI-2 · Only one subtitle source actually works — *Confirmed*
 * **Where**: `YtsSubtitleProvider.search` (requires `imdbId`), `OpenSubtitlesApiProvider.isEnabled` (requires an API key), `StremioSubtitleProvider.resolveImdbId`.
 * **Issue**:
-  * The film is now identified once and its IMDb ID passed to every provider (§3.4), so YTS can be queried; it hasn't been verified to return results yet.
+  * YTS (`yts-subs.com/api/v1/movie/{imdb_id}`) returns 404 for every film (checked 2026-10-05): it's dead, though the provider still asks.
   * `OpenSubtitlesApiProvider.updateCredentials()` is never called and there is no UI to enter a key, so the official API is never enabled.
 * **Implication**:
   * Every automatic search depends on two public Stremio endpoints (`opensubtitles-v3.strem.io`, `v3-cinemeta.strem.io`). If they are down, rate-limited or change format, no subtitles are found and there is no fallback.
   * The "multi-source" resilience described in §3.4 and §4 does not exist yet.
-* **Fix direction**: Verify YTS now that it gets IMDb IDs. Add API-key entry, e.g. a web remote settings card persisted to `SharedPreferences`.
+* **Fix direction**: Remove or replace the YTS provider. Add API-key entry for the official OpenSubtitles API, e.g. a web remote settings card persisted to `SharedPreferences`.
 
 #### KI-4 · TitleSanitizer misparses common movie titles — *Confirmed (reproduced with the same regexes)*
 * **Issue**:
@@ -557,12 +560,12 @@ To use the web remote from the host: `adb forward tcp:8888 tcp:8080` (use the po
 ## 8. Current Project State & Next Steps
 
 * **Current Status**: Prototype / alpha.
-  * **Works today**: builds and 159 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload (named after the file), track selection, per-track offset, one-tap sync to a line the user hears, "Set time", subtitle style, remembered picks restored after restarts or from a one-tap Recent list, and a "which film?" choice when several films share the searched title (or a year in the search).
+  * **Works today**: builds and 171 offline unit tests. On an Android TV 9 (API 28, 1GB) emulator, the overlay renders at 1080p without stealing D-pad focus, and the event-driven render loop switches cues on time and idles at ~0.1% CPU while paused. The TV setup screen shows real permission states with visible D-pad focus. The web remote works end to end: single-phone QR or PIN pairing with unpairing from either side, manual search with automatic Stremio download, upload (named after the file), track selection, per-track offset, one-tap sync to a line the user hears, "Set time", subtitle style, remembered picks restored after restarts or from a one-tap Recent list, and a "which film?" choice when several films share the searched title (or a year in the search).
   * **Open issues**: §7.1. Only Netflix and Hotstar have been tried on a real TV (KI-1); the new optional Netflix spoken-title route needs full device validation (KI-26). Screen-title detection is tuned on tests and the emulator's Leanback sample, not yet on real apps' screens.
 * **Artifact Location**: release `app/build/outputs/apk/release/app-release-unsigned.apk` (~1.7 MB, R8-shrunk; needs a release signing config before distribution), debug `app/build/outputs/apk/debug/app-debug.apk` (~9.7 MB from a clean build, unshrunk; incremental debug builds leave dead space and can be much larger).
 * **Recommended Next Steps** (in order):
   1. **Real-TV follow-up (KI-1, KI-26)**: test Prime/Disney+/YouTube, a non-low-RAM TV, the remembered-pick restore with Netflix, and Sync to a line against real playback; next-episode offer for series.
-  2. **Sourcing resilience (KI-2)**: propagate the IMDb ID so YTS works; add OpenSubtitles API-key entry.
+  2. **Sourcing resilience (KI-2)**: replace the dead YTS source; add OpenSubtitles API-key entry.
   3. **Detection accuracy (KI-4, KI-6, KI-31)**: sanitizer fixes with real-title tests, session-title checks, adding apps from the phone. Tune `ScreenTitlePicker` on real apps' screens (`AlterSubDiag` logs each scan's texts, hints and scores).
   4. **Web remote hardening (KI-9)**: upload size limits and validation.
   5. **Overlay lifecycle (KI-11, KI-12)**: bottom-anchored window, stop when idle.

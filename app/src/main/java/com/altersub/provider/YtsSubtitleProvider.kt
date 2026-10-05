@@ -1,6 +1,7 @@
 package com.altersub.provider
 
 import com.altersub.core.model.ContentMetadata
+import com.altersub.core.model.SubtitleLanguages
 import com.altersub.core.model.SubtitleTrack
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -43,7 +44,7 @@ class YtsSubtitleProvider(
                 val keys = subsObj.keys()
                 while (keys.hasNext()) {
                     val lang = keys.next()
-                    if (matchesLanguage(lang, language)) {
+                    if (SubtitleLanguages.matches(lang, language)) {
                         val langArray = subsObj.getJSONArray(lang)
                         for (i in 0 until langArray.length()) {
                             val subItem = langArray.getJSONObject(i)
@@ -114,11 +115,5 @@ class YtsSubtitleProvider(
         } catch (_: Exception) {
         }
         return null
-    }
-
-    private fun matchesLanguage(trackLang: String, targetLang: String): Boolean {
-        val t = trackLang.lowercase()
-        val target = targetLang.lowercase()
-        return t.startsWith(target) || (target == "en" && t.contains("english")) || target == "all"
     }
 }

@@ -54,13 +54,6 @@ class TitleMatchingTest {
     }
 
     @Test
-    fun testOptionsOfferSameNamedFilmsOrTheTopResults() {
-        val many = skyResults + List(10) { TitleMatch("tt9$it", "Sky $it", 2000 + it) }
-        assertEquals(listOf(sky2025, sky2020), TitleMatching.options(ContentMetadata(title = "under the open sky"), many))
-        assertEquals(TitleMatching.MAX_OPTIONS, TitleMatching.options(ContentMetadata(title = "sky"), many).size)
-    }
-
-    @Test
     fun testScreenTitlesMustNameAFilmExactly() {
         assertEquals(sky2025, TitleMatching.verify(ContentMetadata(title = "UNDER THE OPEN SKY"), skyResults))
         assertEquals(sky2020, TitleMatching.verify(ContentMetadata(title = "Under the Open Sky", year = 2020), skyResults))

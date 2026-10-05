@@ -6,8 +6,8 @@ import com.altersub.core.model.SubtitleStyle
 import com.altersub.core.model.SubtitleTrack
 import com.altersub.core.parser.SubtitleIndex
 import com.altersub.core.session.PickMemory
+import com.altersub.core.session.SearchResults
 import com.altersub.core.session.SearchState
-import com.altersub.core.session.TitleMatch
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 
@@ -18,7 +18,6 @@ import java.io.File
 interface RemoteController {
     val clock: SubtitleClock
     val currentContent: StateFlow<ContentMetadata?>
-    val availableTracks: StateFlow<List<SubtitleTrack>>
     val activeTrack: StateFlow<SubtitleTrack?>
     val overlayRunning: StateFlow<Boolean>
     val overlayError: StateFlow<String?>
@@ -27,16 +26,29 @@ interface RemoteController {
     /** The active track's cues, or null when no subtitles are loaded. */
     val subtitleIndex: StateFlow<SubtitleIndex?>
 
-    /** Films the current title could be (to choose when ambiguous, or to correct a wrong guess). */
-    val matches: StateFlow<List<TitleMatch>>
     val searchState: StateFlow<SearchState>
+
+    /** What the latest search found, grouped by title, for the phone to pick a file from. */
+    val searchResults: StateFlow<SearchResults>
+
+    /** How long each listed file runs (ms), by track id; -1 when it couldn't be read. Missing: not checked yet. */
+    val subtitleDurations: StateFlow<Map<String, Long>>
+
+    /** The subtitle language every search asks for (ISO 639-1, one of SubtitleLanguages). */
+    val subtitleLanguage: StateFlow<String>
+
+    /** Changes [subtitleLanguage], keeps it, and searches the shown results again in it. False if unknown. */
+    fun setSubtitleLanguage(code: String): Boolean
 
     /** A search typed on the phone, optionally ending in a year. */
     fun searchByText(query: String)
 
-    /** The user picked which film they meant from [matches]; false if it isn't one of them. */
-    fun chooseMatch(imdbId: String): Boolean
-    fun selectTrack(track: SubtitleTrack)
+    /** Shows a file from [searchResults] (its title becomes what's playing); false if it isn't listed. */
+    fun useSearchResult(trackId: String): Boolean
+
+    /** The phone is showing [searchResults]: read each file's length into [subtitleDurations]. */
+    fun onSearchResultsViewed()
+
     fun loadDirectSrt(file: File, displayName: String)
     fun updateSubtitleStyle(change: (SubtitleStyle) -> SubtitleStyle)
 

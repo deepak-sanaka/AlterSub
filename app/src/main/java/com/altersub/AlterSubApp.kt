@@ -8,11 +8,12 @@ import android.util.Log
 import com.altersub.core.clock.SubtitleClock
 import com.altersub.core.model.ContentMetadata
 import com.altersub.core.model.SubtitleStyle
+import com.altersub.core.model.SubtitleLanguages
 import com.altersub.core.model.SubtitleTrack
 import com.altersub.core.parser.SubtitleIndex
 import com.altersub.core.session.PickMemory
 import com.altersub.core.session.SearchState
-import com.altersub.core.session.TitleMatch
+import com.altersub.core.session.SearchResults
 import com.altersub.core.session.SubtitleSession
 import com.altersub.detection.DetectionSource
 import com.altersub.detection.NetflixSpeechDetector
@@ -49,13 +50,18 @@ class AlterSubApp : Application(), RemoteController {
     }
 
     private val session by lazy {
-        SubtitleSession(compositeProvider, clock, appScope, File(cacheDir, "subtitles"), pickMemory, CinemetaTitleResolver()) {
+        // The subtitle language picked on the phone, kept on the TV so every phone and every search uses it
+        val subtitlePrefs = getSharedPreferences(SUBTITLE_PREFS, MODE_PRIVATE)
+        SubtitleSession(
+            compositeProvider, clock, appScope, File(cacheDir, "subtitles"), pickMemory, CinemetaTitleResolver(),
+            initialLanguage = subtitlePrefs.getString(KEY_LANGUAGE, SubtitleLanguages.DEFAULT) ?: SubtitleLanguages.DEFAULT,
+            onLanguageChanged = { code -> subtitlePrefs.edit().putString(KEY_LANGUAGE, code).apply() }
+        ) {
             startOverlayService(this)
         }
     }
 
     override val currentContent: StateFlow<ContentMetadata?> get() = session.currentContent
-    override val availableTracks: StateFlow<List<SubtitleTrack>> get() = session.availableTracks
     override val activeTrack: StateFlow<SubtitleTrack?> get() = session.activeTrack
     override val subtitleIndex: StateFlow<SubtitleIndex?> get() = session.subtitleIndex
     val acceptsScreenDetection: Boolean get() = session.acceptsScreenDetection
@@ -190,12 +196,18 @@ class AlterSubApp : Application(), RemoteController {
 
     fun onScreenTitle(metadata: ContentMetadata) = session.onScreenTitle(metadata)
 
-    override val matches: StateFlow<List<TitleMatch>> get() = session.matches
     override val searchState: StateFlow<SearchState> get() = session.searchState
+    override val searchResults: StateFlow<SearchResults> get() = session.results
+    override val subtitleDurations: StateFlow<Map<String, Long>> get() = session.durations
+    override val subtitleLanguage: StateFlow<String> get() = session.language
+
+    override fun setSubtitleLanguage(code: String): Boolean = session.setLanguage(code)
 
     override fun searchByText(query: String) = session.searchByText(query)
 
-    override fun chooseMatch(imdbId: String): Boolean = session.chooseMatch(imdbId)
+    override fun useSearchResult(trackId: String): Boolean = session.useResult(trackId)
+
+    override fun onSearchResultsViewed() = session.onResultsViewed()
 
     fun onMediaSessionsEnded() {
         netflixSpeech.onPlaybackEnded()
@@ -216,9 +228,6 @@ class AlterSubApp : Application(), RemoteController {
 
     override fun onSyncAdjusted() = session.onSyncAdjusted()
 
-    /** User picked a track on the phone remote. */
-    override fun selectTrack(track: SubtitleTrack) = session.selectTrack(track)
-
     override fun loadDirectSrt(file: File, displayName: String) = session.loadDirectSrt(file, displayName)
 
     fun setTestSubtitleIndex(index: SubtitleIndex) = session.setTestSubtitleIndex(index)
@@ -229,6 +238,8 @@ class AlterSubApp : Application(), RemoteController {
         private const val KEY_COLOR = "color"
         private const val KEY_POSITION = "verticalPosition"
         private const val PICK_PREFS = "subtitle_picks"
+        private const val SUBTITLE_PREFS = "subtitles"
+        private const val KEY_LANGUAGE = "language"
         private const val KEY_PICKS = "picks"
         private const val REMOTE_PREFS = "web_remote"
         private const val KEY_TOKENS = "pairedTokens"

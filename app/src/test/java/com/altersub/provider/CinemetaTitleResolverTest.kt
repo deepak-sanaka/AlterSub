@@ -1,6 +1,7 @@
 package com.altersub.provider
 
 import com.altersub.core.model.ContentMetadata
+import com.altersub.core.session.TitleDetails
 import com.altersub.core.session.TitleMatch
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -57,6 +58,30 @@ class CinemetaTitleResolverTest {
         server.enqueue(MockResponse().setBody("""{"metas":[]}"""))
         resolver.find(ContentMetadata(title = "Dark", season = 1, episode = 2))
         assertEquals("/catalog/series/top/search=Dark.json", server.takeRequest().path)
+    }
+
+    @Test
+    fun testDetailsGiveCountryRuntimeAndYear() = runBlocking {
+        server.enqueue(MockResponse().setBody(
+            """{"meta":{"name":"Inception","releaseInfo":"2010","country":"United Kingdom, United States","runtime":"148 min"}}"""
+        ))
+        val inception = TitleMatch("tt1375666", "Inception", 2010)
+
+        val details = resolver.details(inception)
+
+        assertEquals("/meta/movie/tt1375666.json", server.takeRequest().path)
+        assertEquals(TitleDetails(country = "United Kingdom, United States", runtimeMinutes = 148, year = 2010), details)
+        // Asked again (a language switch): answered from memory
+        assertEquals(details, resolver.details(inception))
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun testRuntimesInHoursAndMissingDetails() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"meta":{"runtime":"2h 8min"}}"""))
+        server.enqueue(MockResponse().setResponseCode(404))
+        assertEquals(128, resolver.details(TitleMatch("tt1", "A", null))?.runtimeMinutes)
+        assertEquals(null, resolver.details(TitleMatch("tt2", "B", null)))
     }
 
     @Test

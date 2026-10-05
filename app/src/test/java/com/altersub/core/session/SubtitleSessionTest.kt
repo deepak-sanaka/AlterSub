@@ -24,15 +24,25 @@ import java.io.File
 @OptIn(ExperimentalCoroutinesApi::class)
 class SubtitleSessionTest {
 
-    @Test fun `spoken title requires choice when catalog has two exact names`() = runTest {
+    @Test fun `a spoken title two films share lists both, and waits for the user to pick a file`() = runTest {
         catalog["under the open sky"] = listOf(sky2025, sky2020)
         val session = newSession()
         session.onScreenTitle(ContentMetadata("Under the Open Sky"), requireChoice = true)
         advanceUntilIdle()
+        fake.respond(sky2025.imdbId, "sky2025-eng")
+        fake.respond(sky2020.imdbId, "sky2020-eng")
+        advanceUntilIdle()
+
         assertEquals(SearchState.CHOOSE, session.searchState.value)
         assertNull(session.currentContent.value?.imdbId)
-        assertEquals(2, session.matches.value.size)
-        assertTrue(fake.searched.isEmpty())
+        assertEquals(listOf(2025, 2020), session.results.value.groups.map { it.content.year })
+        assertNull(session.activeTrack.value) // Nothing is guessed
+
+        assertTrue(session.useResult("sky2020-eng"))
+        advanceUntilIdle()
+        assertEquals("Under the Open Sky (2020)", session.currentContent.value?.getDisplayName())
+        assertEquals("sky2020-eng", session.shownText())
+        assertEquals(SearchState.FOUND, session.searchState.value)
     }
 
     @Test fun `stale spoken title cannot finish catalog verification`() = runTest {
@@ -52,34 +62,42 @@ class SubtitleSessionTest {
     @get:Rule
     val tempDir = TemporaryFolder()
 
-    /** Search results are held back until the test releases them, so stale-result races are reproducible. */
+    /**
+     * Search results are held back until the test releases them, so stale-result races are reproducible. Searches
+     * are answered by film (IMDb ID, or the title when there's none) and language.
+     */
     private class FakeProvider : SubtitleProvider {
         override val name = "Fake"
         override val isEnabled = true
         private val pendingSearches = HashMap<String, CompletableDeferred<List<SubtitleTrack>>>()
 
-        fun respond(title: String, vararg trackIds: String) {
-            pending(title).complete(trackIds.map { track(it) })
+        fun respond(film: String, vararg trackIds: String, language: String = "en") {
+            pending(film, language).complete(trackIds.map { track(it, language) })
         }
 
-        fun track(id: String) = SubtitleTrack(id = id, title = id, language = "en", source = name, downloadUrl = id)
+        fun track(id: String, language: String = "en") =
+            SubtitleTrack(id = id, title = id, language = language, source = name, downloadUrl = id)
 
-        private fun pending(title: String) = synchronized(pendingSearches) {
-            pendingSearches.getOrPut(title) { CompletableDeferred() }
+        private fun pending(film: String, language: String) = synchronized(pendingSearches) {
+            pendingSearches.getOrPut("$film|$language") { CompletableDeferred() }
         }
 
         val searched = mutableListOf<ContentMetadata>()
+        val languages = mutableListOf<String>()
 
         override suspend fun search(metadata: ContentMetadata, language: String): List<SubtitleTrack> {
-            synchronized(searched) { searched += metadata }
-            return pending(metadata.title).await()
+            synchronized(searched) {
+                searched += metadata
+                languages += language
+            }
+            return pending(metadata.imdbId ?: metadata.title, language).await()
         }
 
-        // Each track's single cue shows its own id, so the active index is easy to identify
+        // Each track's single cue shows its own id, so the active index is easy to identify; "broken" ones aren't subtitles
         override suspend fun download(track: SubtitleTrack, targetDir: File): File {
             targetDir.mkdirs()
             return File(targetDir, "${track.id}.srt").apply {
-                writeText("1\n00:00:01,000 --> 00:00:02,000\n${track.id}\n")
+                writeText(if (track.id.startsWith("broken")) "not a subtitle file" else "1\n00:00:01,000 --> 00:00:02,000\n${track.id}\n")
             }
         }
     }
@@ -108,7 +126,11 @@ class SubtitleSessionTest {
     private val sky2025 = TitleMatch("tt32543911", "Under the Open Sky", 2025)
     private val sky2020 = TitleMatch("tt12801374", "Under the Open Sky", 2020)
 
-    private fun TestScope.newSession(clock: SubtitleClock = this@SubtitleSessionTest.clock) = SubtitleSession(
+    private fun TestScope.newSession(
+        clock: SubtitleClock = this@SubtitleSessionTest.clock,
+        language: String = "en",
+        onLanguageChanged: (String) -> Unit = {}
+    ) = SubtitleSession(
         provider = CompositeSubtitleProvider(listOf(fake)),
         clock = clock,
         // Runs on the test scheduler; each test answers every search it starts so nothing is left pending
@@ -116,6 +138,8 @@ class SubtitleSessionTest {
         subtitleDir = File(tempDir.root, "subtitles"),
         picks = PickMemory(pickStore),
         resolver = resolver,
+        initialLanguage = language,
+        onLanguageChanged = onLanguageChanged,
         onTrackActivated = { overlayStarts++ }
     )
 
@@ -138,6 +162,9 @@ class SubtitleSessionTest {
         assertEquals("inception-1", session.activeTrack.value?.id)
         assertEquals("inception-1", session.shownText())
         assertEquals(1, overlayStarts)
+        // The phone can still pick another file: the detected title is listed as one group
+        assertEquals(listOf("Inception"), session.results.value.groups.map { it.content.title })
+        assertFalse(session.results.value.manual)
     }
 
     @Test
@@ -329,12 +356,12 @@ class SubtitleSessionTest {
 
         session.onScreenTitle(ContentMetadata(title = "INCEPTION"))
         advanceUntilIdle()
-        fake.respond("Inception", "inception-1")
+        fake.respond(inception.imdbId, "inception-1")
         advanceUntilIdle()
 
         assertEquals("tt1375666", fake.searched.single().imdbId)
         assertEquals("inception-1", session.shownText())
-        assertEquals(listOf(inception), session.matches.value)
+        assertEquals("tt1375666", session.results.value.groups.single().content.imdbId)
 
         // A page header read off the screen next isn't a film, so it doesn't replace the subtitles
         session.onScreenTitle(ContentMetadata(title = "Vertical Video Grid"))
@@ -352,6 +379,8 @@ class SubtitleSessionTest {
         session.searchByText("Inception")
         advanceUntilIdle()
         fake.respond("Inception", "inception-1")
+        advanceUntilIdle()
+        assertTrue(session.useResult("inception-1"))
         advanceUntilIdle()
         val lookups = catalogLookups
 
@@ -384,83 +413,63 @@ class SubtitleSessionTest {
     }
 
     @Test
-    fun testAnAmbiguousTypedTitleAsksAndUsesTheChosenFilm() = runTest {
+    fun testATypedSearchListsEachFilmsFilesAndWaitsForAPick() = runTest {
         catalog["under the open sky"] = listOf(sky2025, sky2020)
         val session = newSession()
+        session.onContentDetected(ContentMetadata(title = "Inception"), DetectionSource.MEDIA_SESSION)
+        advanceUntilIdle()
+        fake.respond("Inception", "inception-1")
+        advanceUntilIdle()
 
         session.searchByText("Under the open sky")
         advanceUntilIdle()
-
-        // Two films share the name: nothing is searched or loaded until the user picks one
-        assertEquals(SearchState.CHOOSE, session.searchState.value)
-        assertEquals(listOf(sky2025, sky2020), session.matches.value)
-        assertTrue(fake.searched.isEmpty())
-        assertNull(session.activeTrack.value)
-
-        assertTrue(session.chooseMatch(sky2020.imdbId))
-        advanceUntilIdle()
-        fake.respond("Under the Open Sky", "sky2020-eng")
+        assertEquals(SearchState.SEARCHING, session.searchState.value)
+        fake.respond(sky2025.imdbId) // No files for the 2025 film
+        fake.respond(sky2020.imdbId, "sky2020-a", "sky2020-b")
         advanceUntilIdle()
 
-        assertEquals("tt12801374", fake.searched.single().imdbId) // Providers get the chosen film's IMDb ID
-        assertEquals("Under the Open Sky (2020)", session.currentContent.value?.getDisplayName())
-        assertEquals("sky2020-eng", session.shownText())
+        // Only films with files are listed, each with its own; the TV keeps showing what it was
+        val results = session.results.value
+        assertTrue(results.manual)
+        assertEquals("Under the open sky", results.query)
+        assertEquals(listOf("tt12801374"), results.groups.map { it.content.imdbId })
+        assertEquals(listOf("sky2020-a", "sky2020-b"), results.groups.single().tracks.map { it.id })
         assertEquals(SearchState.FOUND, session.searchState.value)
-        assertFalse(session.chooseMatch("tt0000000"))
+        assertEquals("inception-1", session.shownText())
+
+        assertTrue(session.useResult("sky2020-b"))
+        advanceUntilIdle()
+        assertEquals("Under the Open Sky (2020)", session.currentContent.value?.getDisplayName())
+        assertEquals("sky2020-b", session.shownText())
+        assertFalse(session.useResult("not-listed"))
     }
 
     @Test
-    fun testAYearInTheSearchPicksTheFilmWithoutAsking() = runTest {
+    fun testAYearNarrowsTheSearchToThatFilm() = runTest {
         catalog["under the open sky"] = listOf(sky2025, sky2020)
         val session = newSession()
 
         session.searchByText("Under the open sky 2020")
         advanceUntilIdle()
-        fake.respond("Under the Open Sky", "sky2020-eng")
+        fake.respond(sky2020.imdbId, "sky2020-eng")
         advanceUntilIdle()
 
-        assertEquals("tt12801374", fake.searched.single().imdbId)
-        assertEquals("sky2020-eng", session.activeTrack.value?.id)
-        // The other films stay listed, so a wrong guess can be corrected
-        assertEquals(listOf(sky2025, sky2020), session.matches.value)
+        assertEquals(listOf("tt12801374"), fake.searched.map { it.imdbId })
+        assertEquals(listOf("sky2020-eng"), session.results.value.groups.single().tracks.map { it.id })
+        assertNull(session.activeTrack.value)
     }
 
     @Test
-    fun testARememberedFilmIsNotAskedAboutAgain() = runTest {
-        catalog["under the open sky"] = listOf(sky2025, sky2020)
-        val first = newSession()
-        first.searchByText("Under the open sky")
-        advanceUntilIdle()
-        first.chooseMatch(sky2020.imdbId)
-        advanceUntilIdle()
-        fake.respond("Under the Open Sky", "sky2020-eng")
-        advanceUntilIdle()
-        val lookupsBefore = catalogLookups
-
-        val restarted = newSession(SubtitleClock())
-        restarted.searchByText("under the open sky")
-        advanceUntilIdle()
-
-        assertEquals(lookupsBefore, catalogLookups) // The remembered pick knows its IMDb ID
-        assertEquals(SearchState.FOUND, restarted.searchState.value)
-        assertEquals("tt12801374", restarted.currentContent.value?.imdbId)
-        assertEquals("sky2020-eng", restarted.shownText())
-    }
-
-    @Test
-    fun testAYearForAnotherFilmOverridesTheRememberedOne() = runTest {
-        catalog["under the open sky"] = listOf(sky2025, sky2020)
+    fun testATitleTheCatalogDoesntKnowIsStillSearchedByName() = runTest {
         val session = newSession()
-        session.searchByText("Under the open sky 2020")
+        session.searchByText("Our Wedding Video")
         advanceUntilIdle()
-        fake.respond("Under the Open Sky", "sky-eng")
-        advanceUntilIdle()
-
-        session.searchByText("Under the open sky 2025")
+        fake.respond("Our Wedding Video", "wedding-1")
         advanceUntilIdle()
 
-        assertEquals("tt32543911", session.currentContent.value?.imdbId)
-        assertEquals("tt32543911", fake.searched.last().imdbId)
+        val group = session.results.value.groups.single()
+        assertEquals("Our Wedding Video", group.content.title)
+        assertNull(group.content.imdbId)
     }
 
     @Test
@@ -470,10 +479,88 @@ class SubtitleSessionTest {
 
         session.searchByText("inception")
         advanceUntilIdle()
-        fake.respond("Inception")
+        fake.respond("tt1375666")
         advanceUntilIdle()
 
         assertEquals(SearchState.NOT_FOUND, session.searchState.value)
-        assertEquals("Inception (2010)", session.currentContent.value?.getDisplayName())
+        assertTrue(session.results.value.groups.isEmpty())
     }
+
+    @Test
+    fun testAFileUsedBeforeIsMarkedAndBringsBackItsOffset() = runTest {
+        catalog["under the open sky"] = listOf(sky2025, sky2020)
+        val first = newSession()
+        first.searchByText("Under the open sky 2020")
+        advanceUntilIdle()
+        fake.respond(sky2020.imdbId, "sky2020-eng", "sky2020-other")
+        advanceUntilIdle()
+        first.useResult("sky2020-eng")
+        advanceUntilIdle()
+        clock.adjustOffset(-1_500L)
+        first.onSyncAdjusted()
+
+        val restartedClock = SubtitleClock()
+        val restarted = newSession(restartedClock)
+        restarted.searchByText("under the open sky 2020")
+        advanceUntilIdle()
+
+        assertEquals("sky2020-eng", restarted.results.value.groups.single().lastUsedTrackId)
+        restarted.useResult("sky2020-eng")
+        advanceUntilIdle()
+        assertEquals(-1_500L, restartedClock.userOffsetMs.value)
+    }
+
+    @Test
+    fun testSearchesAskForTheChosenLanguageWhichIsKept() = runTest {
+        var saved: String? = null
+        val session = newSession(language = "es", onLanguageChanged = { saved = it })
+
+        session.searchByText("Inception")
+        advanceUntilIdle()
+        fake.respond("Inception", "inception-es", language = "es")
+        advanceUntilIdle()
+        assertEquals(listOf("es"), fake.languages)
+        assertEquals("es", session.results.value.language)
+
+        // A new language is kept, and the same search runs again in it
+        assertTrue(session.setLanguage("fr"))
+        advanceUntilIdle()
+        fake.respond("Inception", "inception-fr", language = "fr")
+        advanceUntilIdle()
+        assertEquals("fr", saved)
+        assertEquals("fr", session.language.value)
+        assertEquals(listOf("inception-fr"), session.results.value.groups.single().tracks.map { it.id })
+        assertFalse(session.setLanguage("xx"))
+    }
+
+    @Test
+    fun testALanguageChangeSwitchesADetectedTitleToAFileInThatLanguage() = runTest {
+        val session = newSession()
+        session.onContentDetected(ContentMetadata(title = "Inception"), DetectionSource.MEDIA_SESSION)
+        advanceUntilIdle()
+        fake.respond("Inception", "inception-en")
+        advanceUntilIdle()
+        assertEquals("inception-en", session.shownText())
+
+        session.setLanguage("es")
+        advanceUntilIdle()
+        fake.respond("Inception", "inception-es", language = "es")
+        advanceUntilIdle()
+        assertEquals("inception-es", session.shownText())
+    }
+
+    @Test
+    fun testFilesAreMeasuredOnlyOnceThePhoneShowsThem() = runTest {
+        val session = newSession()
+        session.searchByText("Inception")
+        advanceUntilIdle()
+        fake.respond("Inception", "inception-1", "broken-1")
+        advanceUntilIdle()
+        assertTrue(session.durations.value.isEmpty()) // Nothing downloaded until the phone looks
+
+        session.onResultsViewed()
+        advanceUntilIdle()
+        assertEquals(mapOf("inception-1" to 2_000L, "broken-1" to SubtitleSession.UNKNOWN_DURATION), session.durations.value)
+    }
+
 }

@@ -7,8 +7,10 @@ import com.altersub.core.model.SubtitleStyle
 import com.altersub.core.model.SubtitleTrack
 import com.altersub.core.parser.SubtitleIndex
 import com.altersub.core.session.PickMemory
+import com.altersub.core.session.SearchResults
 import com.altersub.core.session.SearchState
-import com.altersub.core.session.TitleMatch
+import com.altersub.core.session.TitleDetails
+import com.altersub.core.session.TitleGroup
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import okhttp3.MediaType.Companion.toMediaType
@@ -36,9 +38,6 @@ class WebRemoteServerTest {
     private class FakeController : RemoteController {
         override val clock = SubtitleClock()
         override val currentContent = MutableStateFlow<ContentMetadata?>(ContentMetadata(title = "Inception", year = 2010))
-        override val availableTracks = MutableStateFlow(
-            listOf(SubtitleTrack(id = "stremio-1", title = "Inception [eng]", language = "eng", source = "Community", downloadUrl = "u"))
-        )
         override val activeTrack = MutableStateFlow<SubtitleTrack?>(null)
         override val overlayRunning = MutableStateFlow(true)
         override val overlayError = MutableStateFlow<String?>(null)
@@ -46,10 +45,12 @@ class WebRemoteServerTest {
         override val subtitleIndex = MutableStateFlow<SubtitleIndex?>(null)
 
         val searches = mutableListOf<String>()
-        val chosen = mutableListOf<String>()
-        override val matches = MutableStateFlow<List<TitleMatch>>(emptyList())
         override val searchState = MutableStateFlow(SearchState.IDLE)
-        val selectedTracks = mutableListOf<SubtitleTrack>()
+        override val searchResults = MutableStateFlow(SearchResults.NONE)
+        override val subtitleDurations = MutableStateFlow<Map<String, Long>>(emptyMap())
+        override val subtitleLanguage = MutableStateFlow("en")
+        val used = mutableListOf<String>()
+        var resultsViews = 0
         val uploads = mutableListOf<File>()
         val uploadNames = mutableListOf<String>()
         val restored = mutableListOf<String>()
@@ -60,14 +61,20 @@ class WebRemoteServerTest {
             searches += query
         }
 
-        override fun chooseMatch(imdbId: String): Boolean {
-            if (matches.value.none { it.imdbId == imdbId }) return false
-            chosen += imdbId
+        override fun useSearchResult(trackId: String): Boolean {
+            if (searchResults.value.groups.none { group -> group.tracks.any { it.id == trackId } }) return false
+            used += trackId
             return true
         }
 
-        override fun selectTrack(track: SubtitleTrack) {
-            selectedTracks += track
+        override fun onSearchResultsViewed() {
+            resultsViews++
+        }
+
+        override fun setSubtitleLanguage(code: String): Boolean {
+            if (code !in setOf("en", "es")) return false
+            subtitleLanguage.value = code
+            return true
         }
 
         override fun loadDirectSrt(file: File, displayName: String) {
@@ -160,7 +167,6 @@ class WebRemoteServerTest {
         val status = get("/api/status").json()
 
         assertEquals("Inception (2010)", status.getString("title"))
-        assertEquals("stremio-1", status.getJSONArray("tracks").getJSONObject(0).getString("id"))
         assertEquals(2_483_000L, status.getLong("positionMs"))
         assertEquals("Overlay blocked", status.getString("overlayError"))
         assertEquals("yellow", status.getJSONObject("style").getString("color"))
@@ -229,13 +235,76 @@ class WebRemoteServerTest {
         assertEquals(SubtitleStyle(), controller.subtitleStyle.value)
     }
 
-    @Test
-    fun testSelectTrackOnlyAcceptsKnownTracks() {
-        post("/api/select-track?id=stremio-1").close()
-        assertEquals("stremio-1", controller.selectedTracks.single().id)
+    private fun sampleResults() = SearchResults(
+        query = "Under the open sky",
+        language = "en",
+        groups = listOf(
+            TitleGroup(
+                ContentMetadata(title = "Under the Open Sky", year = 2020, imdbId = "tt12801374"),
+                TitleDetails(country = "Japan", runtimeMinutes = 126, year = 2020),
+                listOf(
+                    SubtitleTrack(id = "stremio-1", title = "Under.the.Open.Sky.2020.1080p.BluRay.srt", language = "eng",
+                        source = "Community OpenSubtitles", downloadUrl = "u", fileName = "Under.the.Open.Sky.2020.1080p.BluRay.srt", release = "Blu-ray"),
+                    SubtitleTrack(id = "stremio-2", title = "Under the Open Sky (2020) [eng]", language = "eng",
+                        source = "Community OpenSubtitles", downloadUrl = "u")
+                ),
+                lastUsedTrackId = "stremio-2"
+            )
+        ),
+        manual = true
+    )
 
-        post("/api/select-track?id=nope").use { assertEquals(404, it.code) }
-        assertEquals(1, controller.selectedTracks.size)
+    @Test
+    fun testResultsListFilesByTitleWithDetailsAndLengths() {
+        controller.searchState.value = SearchState.FOUND
+        controller.searchResults.value = sampleResults()
+        controller.subtitleDurations.value = mapOf("stremio-1" to 7_491_000L)
+        controller.activeTrack.value = controller.searchResults.value.groups[0].tracks[0]
+
+        val results = get("/api/results").json()
+        assertEquals(1, controller.resultsViews) // Looking at them starts reading each file's length
+        assertEquals("found", results.getString("state"))
+        assertEquals("English", results.getString("languageName"))
+        val group = results.getJSONArray("groups").getJSONObject(0)
+        assertEquals("Japan", group.getString("country"))
+        assertEquals(2020, group.getInt("year"))
+        assertEquals(126, group.getInt("runtimeMinutes"))
+        val files = group.getJSONArray("files")
+        val first = files.getJSONObject(0)
+        assertEquals("Under.the.Open.Sky.2020.1080p.BluRay.srt", first.getString("fileName"))
+        assertEquals("English", first.getString("language"))
+        assertEquals("Blu-ray", first.getString("release"))
+        assertEquals(7_491_000L, first.getLong("durationMs"))
+        assertTrue(first.getBoolean("active"))
+        val second = files.getJSONObject(1)
+        assertTrue(second.isNull("durationMs")) // Not checked yet
+        assertTrue(second.getBoolean("lastUsed"))
+    }
+
+    @Test
+    fun testUsingAResultOnlyAcceptsListedFiles() {
+        controller.searchResults.value = sampleResults()
+        post("/api/use?id=stremio-2").use { assertEquals(200, it.code) }
+        post("/api/use?id=nope").use { assertEquals(404, it.code) }
+        assertEquals(listOf("stremio-2"), controller.used)
+    }
+
+    @Test
+    fun testTheSubtitleLanguageIsOfferedAndChanged() {
+        val status = get("/api/status").json()
+        assertEquals("en", status.getString("language"))
+        val languages = status.getJSONArray("languages")
+        assertEquals(10, languages.length())
+        assertEquals("English", languages.getJSONObject(0).getString("name"))
+
+        post("/api/language?code=es").use { assertEquals(200, it.code) }
+        assertEquals("es", controller.subtitleLanguage.value)
+        post("/api/language?code=klingon").use { assertEquals(400, it.code) }
+        assertEquals("es", controller.subtitleLanguage.value)
+
+        post("/api/language?code=en", token = null).use { assertEquals(401, it.code) }
+        get("/api/results", token = null).use { assertEquals(401, it.code) }
+        post("/api/use?id=stremio-1", token = "not-a-token").use { assertEquals(401, it.code) }
     }
 
     @Test
@@ -246,23 +315,6 @@ class WebRemoteServerTest {
         assertEquals(listOf("Under the open sky 2020"), controller.searches)
     }
 
-    @Test
-    fun testAmbiguousTitlesOfferMatchesToChooseFrom() {
-        controller.searchState.value = SearchState.CHOOSE
-        controller.matches.value = listOf(
-            TitleMatch("tt32543911", "Under the Open Sky", 2025),
-            TitleMatch("tt12801374", "Under the Open Sky", 2020)
-        )
-
-        val status = get("/api/status").json()
-        assertEquals("choose", status.getString("searchState"))
-        val matches = status.getJSONArray("matches")
-        assertEquals("Under the Open Sky (2020)", matches.getJSONObject(1).getString("title"))
-
-        post("/api/choose?imdbId=tt12801374").use { assertEquals(200, it.code) }
-        assertEquals(listOf("tt12801374"), controller.chosen)
-        post("/api/choose?imdbId=tt0000000").use { assertEquals(404, it.code) }
-    }
 
     private fun upload(srt: String, token: String?) = http.newCall(
         request("/api/upload", token).post(
