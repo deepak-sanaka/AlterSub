@@ -355,17 +355,18 @@ class WebRemoteServer(
             .put("palette", JSONObject().apply {
                 SubtitleStyle.COLORS.forEach { (name, argb) -> put(name, hex(argb)) }
             })
+            // The outline drawn around each colour's letters, for the remote's preview
+            .put("outlines", JSONObject().apply {
+                SubtitleStyle.COLORS.forEach { (name, argb) -> put(name, hex(SubtitleStyle.edgeFor(argb))) }
+            })
             .put("background", style.background)
-            // Each background's box (null for none, with its opacity), forced text colour (null keeps the chosen one)
-            // and outline, so the remote can preview them
+            // Each background's box (null for none) with its opacity, so the remote can preview them
             .put("backgrounds", JSONArray().apply {
                 SubtitleStyle.BACKGROUNDS.forEach { (name, background) ->
                     put(JSONObject()
                         .put("name", name)
                         .put("box", background.boxArgb?.let(::hex) ?: JSONObject.NULL)
-                        .put("boxOpacity", background.boxArgb?.let { ((it ushr 24) / 255.0 * 100).roundToInt() / 100.0 } ?: 0.0)
-                        .put("text", background.textArgb?.let(::hex) ?: JSONObject.NULL)
-                        .put("edge", hex(background.edgeArgb)))
+                        .put("boxOpacity", background.boxArgb?.let { ((it ushr 24) / 255.0 * 100).roundToInt() / 100.0 } ?: 0.0))
                 }
             })
     }

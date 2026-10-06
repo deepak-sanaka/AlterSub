@@ -50,7 +50,7 @@ class SubtitleOverlayService : Service() {
             app.subtitleStyle.collect { style ->
                 subtitleView?.apply {
                     setTextSizeSp(style.textSizeSp)
-                    setTextColor(style.textArgb)
+                    setTextColor(style.colorArgb)
                     setBackground(style.boxArgb, style.edgeArgb)
                     setVerticalPosition(style.verticalPosition)
                     setHorizontalPosition(style.horizontalPosition)

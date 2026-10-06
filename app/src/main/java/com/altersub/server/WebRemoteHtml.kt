@@ -169,6 +169,7 @@ object WebRemoteHtml {
     .swatches { display: flex; gap: 10px; padding-right: 4px; }
     .swatch { width: 44px; height: 44px; min-height: 44px; padding: 0; border: 5px solid var(--bg); border-radius: 50%; }
     .swatch.active { outline: 2px solid var(--text); outline-offset: 2px; }
+    .swatch[data-color=black] { box-shadow: inset 0 0 0 2px #4A4A55; }
     .setting.stacked { display: grid; justify-content: stretch; gap: 14px; }
     .axis { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .axis-label { font-size: 14px; color: var(--text); } .axis-label small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
@@ -1031,17 +1032,17 @@ object WebRemoteHtml {
     const BACKGROUND_NAMES = { 'translucent-black': 'See-through black', black: 'Solid black',
         'translucent-white': 'See-through white', white: 'Solid white', none: 'No background' };
 
-    // How a background from the server looks with the chosen text colour: CSS for the box, text and outline
-    function backgroundLook(background, textColor) {
+    // How a background from the server looks with the chosen text colour and its outline: CSS for each
+    function backgroundLook(background, textColor, outlineColor) {
         let box = 'transparent';
         if (HEX_COLOR.test(background.box || '') && typeof background.boxOpacity === 'number') {
             const n = parseInt(background.box.slice(1), 16);
             box = 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + background.boxOpacity + ')';
         }
-        const edge = HEX_COLOR.test(background.edge || '') ? background.edge : '#000000';
+        const edge = HEX_COLOR.test(outlineColor || '') ? outlineColor : '#000000';
         return {
             box: box,
-            text: HEX_COLOR.test(background.text || '') ? background.text : textColor,
+            text: textColor,
             outline: [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([x, y]) => x + 'px ' + y + 'px 0 ' + edge).join(', ') + ', 0 0 3px ' + edge
         };
     }
@@ -1080,11 +1081,12 @@ object WebRemoteHtml {
         placeSample(v, h);
         const chosenColor = (style.palette || {})[style.color];
         const textColor = HEX_COLOR.test(chosenColor || '') ? chosenColor : '#FFE500';
+        const outlineColor = (style.outlines || {})[style.color];
 
         // Backgrounds: one tile each, showing sample text on it, built once with textContent/aria labels
         const backgrounds = Array.isArray(style.backgrounds) ? style.backgrounds : [];
         const current = backgrounds.find(b => b.name === style.background) || {};
-        applyLook(document.getElementById('styleSampleText'), backgroundLook(current, textColor));
+        applyLook(document.getElementById('styleSampleText'), backgroundLook(current, textColor, outlineColor));
         setText('styleBackground', BACKGROUND_NAMES[style.background] || style.background || '');
         const tiles = document.getElementById('styleBackgrounds');
         if (tiles.childElementCount === 0) {
@@ -1105,14 +1107,12 @@ object WebRemoteHtml {
         }
         for (const button of tiles.children) {
             const background = backgrounds.find(b => b.name === button.dataset.background) || {};
-            applyLook(button.firstChild, backgroundLook(background, textColor));
+            applyLook(button.firstChild, backgroundLook(background, textColor, outlineColor));
             button.classList.toggle('active', button.dataset.background === style.background);
             button.setAttribute('aria-pressed', String(button.dataset.background === style.background));
         }
 
-        // A light background brings its own (black) text colour, so the colour choice waits until it's dark again
-        const textFixed = HEX_COLOR.test(current.text || '');
-        setText('styleColor', textFixed ? 'Black, on a white background' : (style.color || '').replace(/^./, c => c.toUpperCase()));
+        setText('styleColor', (style.color || '').replace(/^./, c => c.toUpperCase()));
 
         // Swatches come from the server's palette, built once with textContent/aria labels (no HTML injection)
         const row = document.getElementById('styleColors');
@@ -1133,7 +1133,6 @@ object WebRemoteHtml {
         for (const button of row.children) {
             button.classList.toggle('active', button.dataset.color === style.color);
             button.setAttribute('aria-pressed', String(button.dataset.color === style.color));
-            button.disabled = textFixed;
         }
     }
 

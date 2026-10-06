@@ -50,7 +50,7 @@ class SubtitleTextView @JvmOverloads constructor(
         color = Color.parseColor("#B3000000") // High-contrast semi-transparent black backing box
         style = Paint.Style.FILL
     }
-    private var drawBox = true
+    private var drawBox = false
 
     private val bgRect = RectF()
     private val paddingHorizontal = 20f * resources.displayMetrics.density

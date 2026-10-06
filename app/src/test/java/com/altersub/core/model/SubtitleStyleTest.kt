@@ -49,31 +49,26 @@ class SubtitleStyleTest {
 
     @Test
     fun testBackgrounds() {
-        // The default is the see-through black box, with the chosen colour outlined in black
+        // No box by default: the chosen colour, outlined in black
         val default = SubtitleStyle(color = "cyan")
-        assertEquals(0xB3000000.toInt(), default.boxArgb)
-        assertEquals(SubtitleStyle.COLORS.getValue("cyan"), default.textArgb)
+        assertEquals("none", default.background)
+        assertNull(default.boxArgb)
         assertEquals(0xFF000000.toInt(), default.edgeArgb)
 
+        assertEquals(0xB3000000.toInt(), default.withBackground("translucent-black").boxArgb)
         assertEquals(0xFF000000.toInt(), default.withBackground("black").boxArgb)
-        assertEquals(SubtitleStyle.COLORS.getValue("cyan"), default.withBackground("black").textArgb)
+        assertEquals(0xB3FFFFFF.toInt(), default.withBackground("translucent-white").boxArgb)
 
-        // White boxes take black text outlined in white, whatever colour was chosen; the choice comes back on a dark box
+        // A white box keeps the chosen colour; black text is one of the choices, and gets a white outline
         val white = default.withBackground("white")
         assertEquals(0xFFFFFFFF.toInt(), white.boxArgb)
-        assertEquals(0xFF000000.toInt(), white.textArgb)
-        assertEquals(0xFFFFFFFF.toInt(), white.edgeArgb)
-        assertEquals(0xB3FFFFFF.toInt(), default.withBackground("translucent-white").boxArgb)
-        assertEquals(0xFF000000.toInt(), default.withBackground("translucent-white").textArgb)
-        assertEquals(SubtitleStyle.COLORS.getValue("cyan"), white.withBackground("translucent-black").textArgb)
-
-        // No box: only the outline
-        val none = default.withBackground("none")
-        assertNull(none.boxArgb)
-        assertEquals(0xFF000000.toInt(), none.edgeArgb)
+        assertEquals(SubtitleStyle.COLORS.getValue("cyan"), white.colorArgb)
+        val blackOnWhite = white.withColor("black")
+        assertEquals(0xFF000000.toInt(), blackOnWhite.colorArgb)
+        assertEquals(0xFFFFFFFF.toInt(), blackOnWhite.edgeArgb)
 
         // Unknown names are ignored, and an unknown stored one falls back to the default
-        assertEquals("none", none.withBackground("<script>").background)
-        assertEquals(0xB3000000.toInt(), SubtitleStyle(background = "bogus").boxArgb)
+        assertEquals("white", white.withBackground("<script>").background)
+        assertNull(SubtitleStyle(background = "bogus").boxArgb)
     }
 }

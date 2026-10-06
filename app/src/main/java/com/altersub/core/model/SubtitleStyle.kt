@@ -15,20 +15,15 @@ data class SubtitleStyle(
     // Horizontal centre of the subtitle block as a fraction of screen width (0 = left, 1 = right)
     val horizontalPosition: Float = DEFAULT_HORIZONTAL_POSITION
 ) {
-    /**
-     * The box behind the text. [boxArgb] is null for no box. A light box sets its own [textArgb] (black), overriding
-     * the chosen colour. [edgeArgb] outlines the letters: black, or white around black text.
-     */
-    data class Background(val boxArgb: Int?, val textArgb: Int?, val edgeArgb: Int)
+    /** The box behind the text; [boxArgb] is null for none. */
+    data class Background(val boxArgb: Int?)
 
     val colorArgb: Int get() = COLORS[color] ?: COLORS.getValue(DEFAULT_COLOR)
 
-    private val backgroundSpec: Background get() = BACKGROUNDS[background] ?: BACKGROUNDS.getValue(DEFAULT_BACKGROUND)
-    val boxArgb: Int? get() = backgroundSpec.boxArgb
-    val edgeArgb: Int get() = backgroundSpec.edgeArgb
+    /** The outline around the letters: white around black text, black around the rest. */
+    val edgeArgb: Int get() = edgeFor(colorArgb)
 
-    /** The colour the text is drawn in: the chosen one, unless the background sets its own. */
-    val textArgb: Int get() = backgroundSpec.textArgb ?: colorArgb
+    val boxArgb: Int? get() = (BACKGROUNDS[background] ?: BACKGROUNDS.getValue(DEFAULT_BACKGROUND)).boxArgb
 
     fun withTextSizeStep(steps: Int): SubtitleStyle =
         copy(textSizeSp = (textSizeSp + steps * TEXT_SIZE_STEP_SP).coerceIn(MIN_TEXT_SIZE_SP, MAX_TEXT_SIZE_SP))
@@ -60,24 +55,27 @@ data class SubtitleStyle(
         const val MIN_HORIZONTAL = 0.1f
         const val MAX_HORIZONTAL = 0.9f
 
+        private const val BLACK = 0xFF000000.toInt()
+        private const val WHITE = 0xFFFFFFFF.toInt()
+
         const val DEFAULT_COLOR = "yellow"
         val COLORS: Map<String, Int> = linkedMapOf(
             "yellow" to 0xFFFFE500.toInt(), // High-visibility cinema yellow
             "white" to 0xFFFFFFFF.toInt(),
-            "cyan" to 0xFF00E5FF.toInt()
+            "cyan" to 0xFF00E5FF.toInt(),
+            "black" to BLACK // For the white backgrounds
         )
 
-        private const val BLACK = 0xFF000000.toInt()
-        private const val WHITE = 0xFFFFFFFF.toInt()
+        fun edgeFor(textArgb: Int): Int = if (textArgb == BLACK) WHITE else BLACK
 
-        const val DEFAULT_BACKGROUND = "translucent-black"
+        // No box by default: the outline alone keeps the text readable
+        const val DEFAULT_BACKGROUND = "none"
         val BACKGROUNDS: Map<String, Background> = linkedMapOf(
-            "translucent-black" to Background(boxArgb = 0xB3000000.toInt(), textArgb = null, edgeArgb = BLACK),
-            "black" to Background(boxArgb = BLACK, textArgb = null, edgeArgb = BLACK),
-            "translucent-white" to Background(boxArgb = 0xB3FFFFFF.toInt(), textArgb = BLACK, edgeArgb = WHITE),
-            "white" to Background(boxArgb = WHITE, textArgb = BLACK, edgeArgb = WHITE),
-            // The outline alone keeps the text readable
-            "none" to Background(boxArgb = null, textArgb = null, edgeArgb = BLACK)
+            "none" to Background(boxArgb = null),
+            "translucent-black" to Background(boxArgb = 0xB3000000.toInt()),
+            "black" to Background(boxArgb = BLACK),
+            "translucent-white" to Background(boxArgb = 0xB3FFFFFF.toInt()),
+            "white" to Background(boxArgb = WHITE)
         )
 
         private fun roundToHundredths(value: Float): Float = (value * 100).roundToInt() / 100f

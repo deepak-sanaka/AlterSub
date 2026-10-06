@@ -240,14 +240,13 @@ class WebRemoteServerTest {
         assertEquals("translucent-white", post("/api/style?background=bogus").json().getJSONObject("style").getString("background"))
         val backgrounds = boxed.getJSONArray("backgrounds")
         assertEquals(SubtitleStyle.BACKGROUNDS.keys.toList(), (0 until backgrounds.length()).map { backgrounds.getJSONObject(it).getString("name") })
-        val translucentWhite = backgrounds.getJSONObject(2)
+        val translucentWhite = backgrounds.getJSONObject(3)
         assertEquals("#FFFFFF", translucentWhite.getString("box"))
         assertEquals(0.7, translucentWhite.getDouble("boxOpacity"), 0.001)
-        assertEquals("#000000", translucentWhite.getString("text"))
-        assertEquals("#FFFFFF", translucentWhite.getString("edge"))
-        val none = backgrounds.getJSONObject(4)
-        assertTrue(none.isNull("box"))
-        assertTrue(none.isNull("text"))
+        assertTrue(backgrounds.getJSONObject(0).isNull("box")) // No background, first and the default
+        // Each colour's outline: white around black text, black around the rest
+        assertEquals("#FFFFFF", boxed.getJSONObject("outlines").getString("black"))
+        assertEquals("#000000", boxed.getJSONObject("outlines").getString("yellow"))
 
         post("/api/style?reset=1").close()
         assertEquals(SubtitleStyle(), controller.subtitleStyle.value)
