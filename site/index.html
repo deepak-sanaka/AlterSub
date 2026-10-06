@@ -10,7 +10,8 @@
 <meta property="og:title" content="AlterSub: your own subtitles on Android TV">
 <meta property="og:description" content="Subtitles you choose, over any streaming app, kept in time, controlled from your phone.">
 <meta property="og:image" content="https://deepak-sanaka.github.io/AlterSub/images/tv-setup.png">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="images/icon.png" type="image/png">
+<link rel="apple-touch-icon" href="images/icon.png">
 <style>
     /* The UI font is the app's own (AlterSub Sans), added at deploy time by .github/workflows/pages.yml */
     @font-face { font-family: "AlterSub Sans"; font-weight: 400; font-display: swap; src: url("fonts/app-sans-regular.ttf") format("truetype"); }
@@ -40,7 +41,8 @@
     /* Header */
     header { padding: 20px 0; }
     header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-    .logo { color: var(--accent); font-size: 26px; font-weight: 700; letter-spacing: -.03em; text-decoration: none; }
+    .logo { display: block; line-height: 0; }
+    .logo img { height: 52px; width: auto; }
     nav { display: flex; gap: 24px; font-size: 15px; }
     nav a { color: var(--text); text-decoration: none; }
     nav a:hover { color: var(--accent); }
@@ -117,7 +119,7 @@
 
     footer { margin-top: 96px; padding: 32px 0 48px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
     footer .wrap { display: grid; gap: 10px; }
-    footer .logo { font-size: 20px; }
+    footer .logo img { height: 40px; }
 
     @media (max-width: 640px) { section { padding-top: 56px; } .card { padding: 22px; } }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
@@ -126,7 +128,7 @@
 <body>
 <header>
     <div class="wrap">
-        <a class="logo" href="#top" aria-label="AlterSub home">AlterSub</a>
+        <a class="logo" href="#top"><img src="images/logo.png" width="81" height="52" alt="AlterSub home"></a>
         <nav aria-label="Sections">
             <a class="optional" href="#features">Features</a>
             <a class="optional" href="#remote">Phone remote</a>
@@ -165,7 +167,7 @@
                 <article class="card">
                     <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="4.5" width="19" height="15" rx="3"/><path d="M6 15h6m2 0h4"/></svg></div>
                     <h3>Over any app</h3>
-                    <p>AlterSub draws subtitles in a layer on top of the screen, so they work over Netflix, Prime Video, YouTube or your own videos. Your remote keeps controlling the app as usual.</p>
+                    <p>AlterSub draws subtitles in a layer on top of the screen, so they work over Netflix, Prime Video, YouTube or your own videos. Your remote keeps controlling the app as usual, and you choose where they sit and how they look.</p>
                 </article>
                 <article class="card">
                     <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
@@ -180,7 +182,7 @@
                 <article class="card">
                     <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18h2"/></svg></div>
                     <h3>Controlled from your phone</h3>
-                    <p>Scan the code on the TV and the remote opens in your phone's browser, with no app to install. Search in any of 10 languages, pick a file, use your own, and fix the timing.</p>
+                    <p>Scan the code on the TV and the remote opens in your phone's browser, with no app to install. Search in any of 13 languages, pick a file, use your own, and fix the timing.</p>
                 </article>
                 <article class="card">
                     <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4h4"/></svg></div>
@@ -205,7 +207,7 @@
                 <figure>
                     <div class="phone"><img src="images/phone-subtitles.png" width="780" height="1688" loading="lazy"
                         alt="The Subtitles tab: a search box, the subtitle language set to English, and the subtitle file showing on the TV"></div>
-                    <figcaption><strong>Subtitles</strong><span>Search for a title, in any of 10 subtitle languages.</span></figcaption>
+                    <figcaption><strong>Subtitles</strong><span>Search for a title, in any of 13 subtitle languages.</span></figcaption>
                 </figure>
                 <figure>
                     <div class="phone"><img src="images/phone-search.png" width="780" height="1688" loading="lazy"
@@ -214,13 +216,13 @@
                 </figure>
                 <figure>
                     <div class="phone"><img src="images/phone-timing.png" width="780" height="1688" loading="lazy"
-                        alt="The Timing tab: the current timing of plus 1.5 seconds with a Reset button, and minus and plus 0.5 second buttons"></div>
+                        alt="The Timing tab: a tip about setting the timing near the start of a film, the current timing of 0 seconds with a Reset button, and minus and plus 0.5 second buttons"></div>
                     <figcaption><strong>Timing</strong><span>Words late? Tap −. Early? Tap +. Or sync to a line you hear.</span></figcaption>
                 </figure>
                 <figure>
                     <div class="phone"><img src="images/phone-style.png" width="780" height="1688" loading="lazy"
-                        alt="The Style tab: a preview of the subtitle text with controls for size, position and colour"></div>
-                    <figcaption><strong>Style</strong><span>Size, position and colour, with a live preview.</span></figcaption>
+                        alt="The Style tab: a preview of the subtitle text with controls for size, vertical and horizontal position, background and text colour"></div>
+                    <figcaption><strong>Style</strong><span>Size, position, background and colour, with a live preview.</span></figcaption>
                 </figure>
             </div>
         </div>
@@ -317,7 +319,7 @@ adb shell cmd notification allow_listener com.altersub/com.altersub.service.Medi
 
 <footer>
     <div class="wrap">
-        <a class="logo" href="#top">AlterSub</a>
+        <a class="logo" href="#top"><img src="images/logo.png" width="62" height="40" alt="AlterSub"></a>
         <p>An independent project, not affiliated with Netflix, Amazon, Google or any streaming service. Their names are trademarks of their owners.</p>
         <p>Set in AlterSub Sans, based on Google Sans Flex (<a href="fonts/OFL.txt">SIL Open Font License</a>). Code on <a href="https://github.com/deepak-sanaka/AlterSub">GitHub</a>.</p>
     </div>

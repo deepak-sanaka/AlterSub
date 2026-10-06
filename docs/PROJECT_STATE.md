@@ -89,7 +89,7 @@ AlterSub/
 ├── docs/
 │   ├── PROJECT_STATE.md                             # This file
 │   └── logo/                                        # The logo: original artwork, yellow master, and how the app's copies were made
-├── site/                                        # Public information page for GitHub Pages (index.html, images, favicon)
+├── site/                                        # Public information page for GitHub Pages (index.html, images incl. the logo and icon)
 ├── .github/workflows/pages.yml                  # Publishes site/ to GitHub Pages, adding the app's UI font
 ├── tools/build_app_font.py                          # Rebuilds the UI font files from upstream Google Sans Flex
 ├── gradle/wrapper/                                  # Gradle 8.13 wrapper binaries & properties
