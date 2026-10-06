@@ -170,6 +170,8 @@ object WebRemoteHtml {
     .swatch { width: 44px; height: 44px; min-height: 44px; padding: 0; border: 5px solid var(--bg); border-radius: 50%; }
     .swatch.active { outline: 2px solid var(--text); outline-offset: 2px; }
     .setting.stacked { display: grid; justify-content: stretch; gap: 14px; }
+    .axis { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .axis-label { font-size: 14px; color: var(--text); } .axis-label small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
     .backgrounds { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
     .background-option { min-height: 52px; padding: 0; border-radius: 12px; background: linear-gradient(160deg, #565868, #171821 80%);
         font: 700 15px/1.3 Arial, sans-serif; }
@@ -370,13 +372,16 @@ object WebRemoteHtml {
                 <div class="setting-label">Text size<small id="styleSize">Medium</small></div>
                 <div class="stepper"><button onclick="setStyle('sizeStep=-1')" aria-label="Make subtitles smaller">Smaller</button><button onclick="setStyle('sizeStep=1')" aria-label="Make subtitles larger">Larger</button></div>
             </div>
-            <div class="setting">
-                <div class="setting-label">Height<small id="stylePosition">Near the bottom</small></div>
-                <div class="stepper"><button onclick="setStyle('positionStep=-1')" aria-label="Move subtitles up">Up</button><button onclick="setStyle('positionStep=1')" aria-label="Move subtitles down">Down</button></div>
-            </div>
-            <div class="setting">
-                <div class="setting-label">Side<small id="styleSide">Centred</small></div>
-                <div class="stepper"><button onclick="setStyle('horizontalStep=-1')" aria-label="Move subtitles left">Left</button><button onclick="setStyle('horizontalStep=1')" aria-label="Move subtitles right">Right</button></div>
+            <div class="setting stacked">
+                <div class="setting-label">Position</div>
+                <div class="axis">
+                    <div class="axis-label">Vertical<small id="stylePosition">Near the bottom</small></div>
+                    <div class="stepper"><button onclick="setStyle('positionStep=-1')" aria-label="Move subtitles up">Up</button><button onclick="setStyle('positionStep=1')" aria-label="Move subtitles down">Down</button></div>
+                </div>
+                <div class="axis">
+                    <div class="axis-label">Horizontal<small id="styleSide">Centred</small></div>
+                    <div class="stepper"><button onclick="setStyle('horizontalStep=-1')" aria-label="Move subtitles left">Left</button><button onclick="setStyle('horizontalStep=1')" aria-label="Move subtitles right">Right</button></div>
+                </div>
             </div>
             <div class="setting stacked"><div class="setting-label">Background<small id="styleBackground">See-through black</small></div><div class="backgrounds" id="styleBackgrounds" role="group" aria-label="Background"></div></div>
             <div class="setting"><div class="setting-label">Text colour<small id="styleColor">Yellow</small></div><div class="swatches" id="styleColors"></div></div>
