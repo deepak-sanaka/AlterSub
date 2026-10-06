@@ -17,6 +17,8 @@ object SubtitleLanguages {
         Language("de", "German", "Deutsch", setOf("de", "ger", "deu", "german")),
         Language("pt", "Portuguese", "Português", setOf("pt", "por", "pob", "pom", "pt-br", "pt-pt", "portuguese", "brazilian-portuguese")),
         Language("it", "Italian", "Italiano", setOf("it", "ita", "italian")),
+        Language("nl", "Dutch", "Nederlands", setOf("nl", "dut", "nld", "dutch")),
+        Language("ru", "Russian", "Русский", setOf("ru", "rus", "russian")),
         Language("hi", "Hindi", "हिन्दी", setOf("hi", "hin", "hindi")),
         Language("ar", "Arabic", "العربية", setOf("ar", "ara", "arabic")),
         Language("zh", "Chinese", "中文", setOf("zh", "chi", "zho", "zhs", "zht", "zhe", "ze", "zh-cn", "zh-tw", "chinese")),

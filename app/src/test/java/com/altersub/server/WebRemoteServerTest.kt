@@ -3,6 +3,7 @@ package com.altersub.server
 import com.altersub.core.clock.SubtitleClock
 import com.altersub.core.model.ContentMetadata
 import com.altersub.core.model.SubtitleCue
+import com.altersub.core.model.SubtitleLanguages
 import com.altersub.core.model.SubtitleStyle
 import com.altersub.core.model.SubtitleTrack
 import com.altersub.core.parser.SubtitleIndex
@@ -310,7 +311,7 @@ class WebRemoteServerTest {
         val status = get("/api/status").json()
         assertEquals("en", status.getString("language"))
         val languages = status.getJSONArray("languages")
-        assertEquals(10, languages.length())
+        assertEquals(SubtitleLanguages.ALL.size, languages.length())
         assertEquals("English", languages.getJSONObject(0).getString("name"))
 
         post("/api/language?code=es").use { assertEquals(200, it.code) }
