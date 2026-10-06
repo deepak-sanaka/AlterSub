@@ -9,8 +9,8 @@ import org.junit.Test
 class SubtitleLanguagesTest {
 
     @Test
-    fun testTwelveLanguagesWithEnglishFirstAndByDefault() {
-        assertEquals(12, SubtitleLanguages.ALL.size)
+    fun testThirteenLanguagesWithEnglishFirstAndByDefault() {
+        assertEquals(13, SubtitleLanguages.ALL.size)
         assertEquals("en", SubtitleLanguages.ALL.first().code)
         assertEquals("en", SubtitleLanguages.DEFAULT)
         assertEquals(SubtitleLanguages.ALL.size, SubtitleLanguages.ALL.map { it.code }.toSet().size)
@@ -25,6 +25,7 @@ class SubtitleLanguagesTest {
         assertTrue(SubtitleLanguages.matches("zht", "zh"))
         assertTrue(SubtitleLanguages.matches("nld", "nl")) // The code OpenSubtitles' Stremio proxy uses for Dutch
         assertTrue(SubtitleLanguages.matches("rus", "ru"))
+        assertTrue(SubtitleLanguages.matches("tel", "te"))
         assertFalse(SubtitleLanguages.matches("spa", "en"))
         assertFalse(SubtitleLanguages.matches("eng", "xx"))
     }
