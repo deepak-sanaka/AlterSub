@@ -12,6 +12,7 @@ class SubtitleLanguagesTest {
     fun testThirteenLanguagesWithEnglishFirstAndByDefault() {
         assertEquals(13, SubtitleLanguages.ALL.size)
         assertEquals("en", SubtitleLanguages.ALL.first().code)
+        assertEquals("te", SubtitleLanguages.ALL[1].code)
         assertEquals("en", SubtitleLanguages.DEFAULT)
         assertEquals(SubtitleLanguages.ALL.size, SubtitleLanguages.ALL.map { it.code }.toSet().size)
     }

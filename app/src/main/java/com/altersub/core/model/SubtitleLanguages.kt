@@ -12,6 +12,7 @@ object SubtitleLanguages {
 
     val ALL: List<Language> = listOf(
         Language("en", "English", "English", setOf("en", "eng", "english")),
+        Language("te", "Telugu", "తెలుగు", setOf("te", "tel", "telugu")),
         Language("es", "Spanish", "Español", setOf("es", "spa", "spn", "spl", "ea", "spanish")),
         Language("fr", "French", "Français", setOf("fr", "fre", "fra", "french")),
         Language("de", "German", "Deutsch", setOf("de", "ger", "deu", "german")),
@@ -20,7 +21,6 @@ object SubtitleLanguages {
         Language("nl", "Dutch", "Nederlands", setOf("nl", "dut", "nld", "dutch")),
         Language("ru", "Russian", "Русский", setOf("ru", "rus", "russian")),
         Language("hi", "Hindi", "हिन्दी", setOf("hi", "hin", "hindi")),
-        Language("te", "Telugu", "తెలుగు", setOf("te", "tel", "telugu")),
         Language("ar", "Arabic", "العربية", setOf("ar", "ara", "arabic")),
         Language("zh", "Chinese", "中文", setOf("zh", "chi", "zho", "zhs", "zht", "zhe", "ze", "zh-cn", "zh-tw", "chinese")),
         Language("ja", "Japanese", "日本語", setOf("ja", "jpn", "japanese"))
