@@ -118,6 +118,16 @@ object WebRemoteHtml {
     .sync-status button { flex: none; min-width: 84px; }
     .tip { display: flex; gap: 10px; margin-bottom: 12px; padding: 14px 16px; border-radius: 18px; background: #1D2130; color: #C8D0EA; font-size: 13px; }
     .tip svg { flex: none; width: 18px; height: 18px; margin-top: 1px; }
+    .tip-dismiss { min-height: 36px; margin-top: 10px; padding: 6px 14px; border-radius: 12px; background: rgba(200, 208, 234, .14); color: #E4E9F7; font-size: 13px; }
+    .info-anchor { position: relative; }
+    .with-info { display: flex; align-items: center; gap: 6px; }
+    .info-button { flex: none; width: 36px; min-height: 36px; height: 36px; padding: 0; border-radius: 50%; background: transparent; color: var(--muted); }
+    .info-button svg { width: 20px; height: 20px; }
+    .info-button[aria-expanded=true] { color: var(--text); background: var(--surface-2); }
+    .tooltip { position: absolute; top: 44px; left: 0; right: 0; z-index: 5; padding: 14px 44px 14px 16px; border-radius: 16px;
+        background: #2A2F42; color: #DDE3F5; font-size: 13px; box-shadow: 0 12px 32px rgba(0, 0, 0, .5); }
+    .tooltip-close { position: absolute; top: 4px; right: 4px; width: 36px; min-height: 36px; height: 36px; padding: 0; border-radius: 50%; background: transparent; color: #DDE3F5; }
+    .tooltip-close svg { width: 18px; height: 18px; }
     .card + .card { margin-top: 12px; }
     .card-title { font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
     .card-title small { margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: #343223; color: var(--accent); font-size: 11px; font-weight: 500; vertical-align: 2px; }
@@ -296,12 +306,19 @@ object WebRemoteHtml {
                 <button class="primary wide" onclick="focusSearch()">Find subtitles</button>
             </div>
             <div id="timingControls" hidden>
-                <div class="section-head"><h2>Line up the subtitles</h2><p class="muted">If the words don’t match the voices on your TV, adjust them here.</p></div>
+                <div class="section-head info-anchor">
+                    <h2 class="with-info">Line up the subtitles<button class="info-button" id="timingInfoButton" onclick="toggleTimingInfo()" aria-label="Timing tip" aria-expanded="false" aria-controls="timingInfo" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8.5v.5"/></svg></button></h2>
+                    <div class="tooltip" id="timingInfo" role="dialog" aria-label="Timing tip" hidden>
+                        <p>Easiest near the start of a film or episode: the first time someone speaks is simple to match with the first subtitle. Once set, the timing is saved for this subtitle file.</p>
+                        <button class="tooltip-close" onclick="closeTimingInfo()" aria-label="Close tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+                    </div>
+                    <p class="muted">If the words don’t match the voices on your TV, adjust them here.</p>
+                </div>
+                <div class="tip" id="timingTip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8.5v.5"/></svg><div><p>Easiest near the start of a film or episode: the first time someone speaks is simple to match with the first subtitle. Once set, the timing is saved for this subtitle file.</p><button class="tip-dismiss" onclick="dismissTimingTip()">OK, understood</button></div></div>
                 <div class="sync-status" id="syncStatus">
                     <div role="status" aria-atomic="true"><span class="eyebrow">Subtitle timing</span><strong id="offsetText">0 s</strong><span class="hint" id="offsetHint">Original timing</span></div>
                     <button id="resetOffset" onclick="adjustOffset(-offsetValue)" aria-label="Reset subtitle timing to 0 seconds">Reset</button>
                 </div>
-                <p class="tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8.5v.5"/></svg><span>Easiest near the start of a film or episode: the first time someone speaks is simple to match with the first subtitle. Once set, the timing is saved for this subtitle file.</span></p>
 
                 <section class="surface card" aria-labelledby="fineTitle">
                     <h3 class="card-title" id="fineTitle">Adjust timing</h3>
@@ -1151,7 +1168,36 @@ object WebRemoteHtml {
         showTab(tabs[next]);
         document.getElementById(tabs[next] + 'Tab').focus();
     });
+    // The timing tip shows as a card on every visit; once dismissed, it's one tap away behind the heading's info button
+    function dismissTimingTip() {
+        document.getElementById('timingTip').hidden = true;
+        const button = document.getElementById('timingInfoButton');
+        button.hidden = false;
+        button.focus();
+    }
+
+    function toggleTimingInfo() {
+        const info = document.getElementById('timingInfo');
+        info.hidden = !info.hidden;
+        document.getElementById('timingInfoButton').setAttribute('aria-expanded', String(!info.hidden));
+    }
+
+    function closeTimingInfo() {
+        if (document.getElementById('timingInfo').hidden) return;
+        toggleTimingInfo();
+        document.getElementById('timingInfoButton').focus();
+    }
+
+    // A tap anywhere else closes the tip
+    document.addEventListener('click', event => {
+        if (!event.target.closest('#timingInfo, #timingInfoButton')) {
+            const info = document.getElementById('timingInfo');
+            if (!info.hidden) { info.hidden = true; document.getElementById('timingInfoButton').setAttribute('aria-expanded', 'false'); }
+        }
+    });
+
     document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') closeTimingInfo();
         if (event.key === 'Escape' && sheetOpen) closeResults();
     });
     renderSteps();
