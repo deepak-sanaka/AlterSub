@@ -839,7 +839,7 @@ object WebRemoteHtml {
     }
 
     // Fine-tune: one step per tap, in the direction the user picks; the step size is remembered on this phone
-    const STEPS = [100, 500, 1000, 5000];
+    const STEPS = [250, 500, 1000, 5000];
     let stepMs = 500;
     try { const saved = Number(localStorage.getItem('altersubStep')); if (STEPS.includes(saved)) stepMs = saved; } catch (e) {}
 
