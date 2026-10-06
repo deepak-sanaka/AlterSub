@@ -179,6 +179,7 @@ class AlterSubApp : Application(), RemoteController {
             .putString(KEY_COLOR, style.color)
             .putFloat(KEY_POSITION, style.verticalPosition)
             .putString(KEY_BACKGROUND, style.background)
+            .putFloat(KEY_HORIZONTAL, style.horizontalPosition)
             .apply()
     }
 
@@ -191,7 +192,8 @@ class AlterSubApp : Application(), RemoteController {
             textSizeSp = stylePrefs.getFloat(KEY_TEXT_SIZE, SubtitleStyle.DEFAULT_TEXT_SIZE_SP),
             color = stylePrefs.getString(KEY_COLOR, null) ?: SubtitleStyle.DEFAULT_COLOR,
             verticalPosition = stylePrefs.getFloat(KEY_POSITION, SubtitleStyle.DEFAULT_VERTICAL_POSITION),
-            background = stylePrefs.getString(KEY_BACKGROUND, null) ?: SubtitleStyle.DEFAULT_BACKGROUND
+            background = stylePrefs.getString(KEY_BACKGROUND, null) ?: SubtitleStyle.DEFAULT_BACKGROUND,
+            horizontalPosition = stylePrefs.getFloat(KEY_HORIZONTAL, SubtitleStyle.DEFAULT_HORIZONTAL_POSITION)
         )
 
         // Embedded web server for the phone companion remote, unless it was switched off on the TV
@@ -249,6 +251,7 @@ class AlterSubApp : Application(), RemoteController {
         private const val KEY_COLOR = "color"
         private const val KEY_POSITION = "verticalPosition"
         private const val KEY_BACKGROUND = "background"
+        private const val KEY_HORIZONTAL = "horizontalPosition"
         private const val PICK_PREFS = "subtitle_picks"
         private const val SUBTITLE_PREFS = "subtitles"
         private const val KEY_LANGUAGE = "language"

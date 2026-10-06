@@ -19,9 +19,21 @@ class SubtitleStyleTest {
     fun testPositionStepsAreRoundedAndClamped() {
         var style = SubtitleStyle()
         repeat(3) { style = style.withPositionStep(-1) }
-        assertEquals(0.76f, style.verticalPosition) // No float drift from repeated steps
+        assertEquals(0.70f, style.verticalPosition) // No float drift from repeated steps
         assertEquals(SubtitleStyle.MAX_POSITION, SubtitleStyle().withPositionStep(50).verticalPosition)
-        assertEquals(SubtitleStyle.MIN_POSITION, SubtitleStyle().withPositionStep(-50).verticalPosition)
+        // All the way up, as far as all the way down
+        assertEquals(0.05f, SubtitleStyle().withPositionStep(-50).verticalPosition)
+        assertEquals(1f - SubtitleStyle.MAX_POSITION, SubtitleStyle.MIN_POSITION, 0.0001f)
+    }
+
+    @Test
+    fun testSideStepsAreRoundedAndClamped() {
+        var style = SubtitleStyle()
+        assertEquals(0.5f, style.horizontalPosition)
+        repeat(3) { style = style.withHorizontalStep(-1) }
+        assertEquals(0.35f, style.horizontalPosition)
+        assertEquals(SubtitleStyle.MAX_HORIZONTAL, SubtitleStyle().withHorizontalStep(50).horizontalPosition)
+        assertEquals(SubtitleStyle.MIN_HORIZONTAL, SubtitleStyle().withHorizontalStep(-50).horizontalPosition)
     }
 
     @Test

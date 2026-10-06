@@ -11,7 +11,9 @@ data class SubtitleStyle(
     val color: String = DEFAULT_COLOR,
     // Vertical centre of the subtitle block as a fraction of screen height (0 = top, 1 = bottom)
     val verticalPosition: Float = DEFAULT_VERTICAL_POSITION,
-    val background: String = DEFAULT_BACKGROUND
+    val background: String = DEFAULT_BACKGROUND,
+    // Horizontal centre of the subtitle block as a fraction of screen width (0 = left, 1 = right)
+    val horizontalPosition: Float = DEFAULT_HORIZONTAL_POSITION
 ) {
     /**
      * The box behind the text. [boxArgb] is null for no box. A light box sets its own [textArgb] (black), overriding
@@ -34,6 +36,9 @@ data class SubtitleStyle(
     fun withPositionStep(steps: Int): SubtitleStyle =
         copy(verticalPosition = roundToHundredths(verticalPosition + steps * POSITION_STEP).coerceIn(MIN_POSITION, MAX_POSITION))
 
+    fun withHorizontalStep(steps: Int): SubtitleStyle =
+        copy(horizontalPosition = roundToHundredths(horizontalPosition + steps * HORIZONTAL_STEP).coerceIn(MIN_HORIZONTAL, MAX_HORIZONTAL))
+
     fun withColor(name: String): SubtitleStyle = if (name in COLORS) copy(color = name) else this
 
     fun withBackground(name: String): SubtitleStyle = if (name in BACKGROUNDS) copy(background = name) else this
@@ -45,9 +50,15 @@ data class SubtitleStyle(
         const val MAX_TEXT_SIZE_SP = 60f
 
         const val DEFAULT_VERTICAL_POSITION = 0.82f
-        const val POSITION_STEP = 0.02f
-        const val MIN_POSITION = 0.5f
+        // From the top edge to the bottom one; the overlay keeps the box on screen at either end
+        const val POSITION_STEP = 0.04f
+        const val MIN_POSITION = 0.05f
         const val MAX_POSITION = 0.95f
+
+        const val DEFAULT_HORIZONTAL_POSITION = 0.5f
+        const val HORIZONTAL_STEP = 0.05f
+        const val MIN_HORIZONTAL = 0.1f
+        const val MAX_HORIZONTAL = 0.9f
 
         const val DEFAULT_COLOR = "yellow"
         val COLORS: Map<String, Int> = linkedMapOf(

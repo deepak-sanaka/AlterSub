@@ -158,8 +158,9 @@ object WebRemoteHtml {
     .manual p { font-size: 13px; }
     .preview { display: grid; place-items: center; position: relative; aspect-ratio: 16 / 9; overflow: hidden;
         border-radius: 22px; background: linear-gradient(160deg, #333442, #171821 70%); margin: 20px 0 26px; }
+    .preview.text-high .preview-label { top: auto; bottom: 14px; }
     .preview-label { position: absolute; top: 14px; left: 16px; color: #C0C0CD; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
-    .sample { position: absolute; left: 16px; right: 16px; bottom: 18%; text-align: center; font: 700 23px/1.35 Arial, sans-serif; }
+    .sample { position: absolute; left: 50%; top: 82%; transform: translate(-50%, -50%); white-space: nowrap; text-align: center; font: 700 23px/1.35 Arial, sans-serif; }
     .sample span { padding: 2px 10px; border-radius: 8px; color: var(--accent); background: rgba(0, 0, 0, .7);
         -webkit-box-decoration-break: clone; box-decoration-break: clone; }
     .setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 0; border-bottom: 1px solid var(--line); }
@@ -370,8 +371,12 @@ object WebRemoteHtml {
                 <div class="stepper"><button onclick="setStyle('sizeStep=-1')" aria-label="Make subtitles smaller">Smaller</button><button onclick="setStyle('sizeStep=1')" aria-label="Make subtitles larger">Larger</button></div>
             </div>
             <div class="setting">
-                <div class="setting-label">Position<small id="stylePosition">Near the bottom</small></div>
+                <div class="setting-label">Height<small id="stylePosition">Near the bottom</small></div>
                 <div class="stepper"><button onclick="setStyle('positionStep=-1')" aria-label="Move subtitles up">Up</button><button onclick="setStyle('positionStep=1')" aria-label="Move subtitles down">Down</button></div>
+            </div>
+            <div class="setting">
+                <div class="setting-label">Side<small id="styleSide">Centred</small></div>
+                <div class="stepper"><button onclick="setStyle('horizontalStep=-1')" aria-label="Move subtitles left">Left</button><button onclick="setStyle('horizontalStep=1')" aria-label="Move subtitles right">Right</button></div>
             </div>
             <div class="setting stacked"><div class="setting-label">Background<small id="styleBackground">See-through black</small></div><div class="backgrounds" id="styleBackgrounds" role="group" aria-label="Background"></div></div>
             <div class="setting"><div class="setting-label">Text colour<small id="styleColor">Yellow</small></div><div class="swatches" id="styleColors"></div></div>
@@ -450,6 +455,8 @@ object WebRemoteHtml {
             button.tabIndex = active ? 0 : -1;
         }
         window.scrollTo(0, 0);
+        // The preview can only be measured once its tab shows
+        if (name === 'style' && lastStyle) renderStyle(lastStyle);
     }
 
     function focusSearch() {
@@ -1040,13 +1047,32 @@ object WebRemoteHtml {
         element.style.textShadow = look.outline;
     }
 
+    // Centres the preview text where the TV puts it, kept inside the frame the way the TV keeps it on screen
+    var lastStyle = null; // var: showTab can run before this line does
+
+    function placeSample(v, h) {
+        const sample = document.getElementById('styleSample'), frame = sample.parentElement;
+        if (!frame.clientWidth) return;
+        const clamp = (value, min, max) => max < min ? (min + max) / 2 : Math.min(max, Math.max(min, value));
+        const margin = .03;
+        const x = clamp(frame.clientWidth * h, frame.clientWidth * margin + sample.offsetWidth / 2, frame.clientWidth * (1 - margin) - sample.offsetWidth / 2);
+        const y = clamp(frame.clientHeight * v, frame.clientHeight * margin + sample.offsetHeight / 2, frame.clientHeight * (1 - margin) - sample.offsetHeight / 2);
+        sample.style.left = x + 'px';
+        sample.style.top = y + 'px';
+        // Out of the text's way
+        frame.classList.toggle('text-high', v < .4);
+    }
+
     function renderStyle(style) {
         if (!style) return;
+        lastStyle = style;
         setText('styleSize', style.textSizeSp < 26 ? 'Small' : style.textSizeSp < 36 ? 'Medium' : style.textSizeSp < 46 ? 'Large' : 'Extra large');
-        setText('stylePosition', style.verticalPosition < .62 ? 'Middle of the screen' : style.verticalPosition < .8 ? 'Below the middle' : 'Near the bottom');
+        const v = style.verticalPosition, h = typeof style.horizontalPosition === 'number' ? style.horizontalPosition : .5;
+        setText('stylePosition', v < .2 ? 'Near the top' : v < .4 ? 'Above the middle' : v < .6 ? 'Middle of the screen' : v < .8 ? 'Below the middle' : 'Near the bottom');
+        setText('styleSide', Math.abs(h - .5) < .01 ? 'Centred' : h < .5 ? (h <= .3 ? 'Towards the left' : 'Left of centre') : (h >= .7 ? 'Towards the right' : 'Right of centre'));
         const sample = document.getElementById('styleSample');
         sample.style.fontSize = Math.max(16, Math.min(32, style.textSizeSp * .7)) + 'px';
-        sample.style.bottom = Math.max(10, (1 - style.verticalPosition) * 100) + '%';
+        placeSample(v, h);
         const chosenColor = (style.palette || {})[style.color];
         const textColor = HEX_COLOR.test(chosenColor || '') ? chosenColor : '#FFE500';
 

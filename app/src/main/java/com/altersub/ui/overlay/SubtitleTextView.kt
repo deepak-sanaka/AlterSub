@@ -25,8 +25,9 @@ class SubtitleTextView @JvmOverloads constructor(
     // Split once per subtitle change; onDraw iterates this by index so drawing allocates nothing (AGENTS.md Rule 2)
     private var lines: Array<String> = emptyArray()
     private var baseTextSizePx: Float = 30f * resources.displayMetrics.scaledDensity
-    // Vertical centre of the subtitle block as a fraction of the view height
+    // Centre of the subtitle block as fractions of the view's height and width
     private var verticalPosition: Float = 0.82f
+    private var horizontalPosition: Float = 0.5f
 
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#FFE500") // High-visibility cinema yellow
@@ -86,13 +87,17 @@ class SubtitleTextView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun setHorizontalPosition(fraction: Float) {
+        horizontalPosition = fraction
+        invalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (lines.isEmpty()) return
 
         val viewWidth = width.toFloat()
         val viewHeight = height.toFloat()
-        val centerX = viewWidth / 2f
 
         // Ensure text fits within 90% of screen width
         val maxAvailableWidth = viewWidth * 0.90f
@@ -118,15 +123,20 @@ class SubtitleTextView @JvmOverloads constructor(
         val lineHeight = textPaint.fontSpacing
         val totalTextHeight = lines.size * lineHeight
 
-        // Centre the block at the user-chosen height (default 82% down, above the TV's bottom edge)
-        val startY = viewHeight * verticalPosition - (totalTextHeight / 2f)
-
         // Measure scaled width for bounding box
         var scaledMaxWidth = 0f
         for (i in lines.indices) {
             val w = textPaint.measureText(lines[i])
             if (w > scaledMaxWidth) scaledMaxWidth = w
         }
+
+        // Centre the block where the user put it (default 82% down, in the middle), but keep the whole box inside
+        // the TV's safe margins, so the top, bottom and side positions never cut it off
+        val marginY = viewHeight * SAFE_MARGIN + paddingVertical
+        val startY = clampCentred(viewHeight * verticalPosition - totalTextHeight / 2f, marginY, viewHeight - marginY - totalTextHeight)
+        val halfBox = scaledMaxWidth / 2f + paddingHorizontal
+        val marginX = viewWidth * SAFE_MARGIN + halfBox
+        val centerX = clampCentred(viewWidth * horizontalPosition, marginX, viewWidth - marginX)
 
         val boxLeft = centerX - (scaledMaxWidth / 2f) - paddingHorizontal
         val boxRight = centerX + (scaledMaxWidth / 2f) + paddingHorizontal
@@ -145,5 +155,14 @@ class SubtitleTextView @JvmOverloads constructor(
             canvas.drawText(line, centerX, y, strokePaint)
             canvas.drawText(line, centerX, y, textPaint)
         }
+    }
+
+    /** [value] kept within [min]..[max], or halfway between them when the block is too big to fit at all. */
+    private fun clampCentred(value: Float, min: Float, max: Float): Float =
+        if (max < min) (min + max) / 2f else value.coerceIn(min, max)
+
+    private companion object {
+        // Kept clear on every edge: the area some TVs crop (overscan)
+        const val SAFE_MARGIN = 0.03f
     }
 }

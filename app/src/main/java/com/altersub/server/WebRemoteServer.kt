@@ -145,6 +145,7 @@ class WebRemoteServer(
                             val stepped = style
                                 .withTextSizeStep(params["sizeStep"]?.toIntOrNull() ?: 0)
                                 .withPositionStep(params["positionStep"]?.toIntOrNull() ?: 0)
+                                .withHorizontalStep(params["horizontalStep"]?.toIntOrNull() ?: 0)
                             val colored = params["color"]?.let(stepped::withColor) ?: stepped
                             params["background"]?.let(colored::withBackground) ?: colored
                         }
@@ -348,6 +349,7 @@ class WebRemoteServer(
             .put("textSizeSp", style.textSizeSp.toDouble())
             .put("color", style.color)
             .put("verticalPosition", style.verticalPosition.toDouble())
+            .put("horizontalPosition", style.horizontalPosition.toDouble())
             .put("colors", JSONArray(SubtitleStyle.COLORS.keys.toList()))
             // Hex values so the remote can show real colour swatches
             .put("palette", JSONObject().apply {

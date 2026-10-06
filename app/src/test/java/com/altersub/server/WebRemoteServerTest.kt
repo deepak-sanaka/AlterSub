@@ -225,9 +225,10 @@ class WebRemoteServerTest {
 
     @Test
     fun testStyleStepsColoursAndReset() {
-        val style = post("/api/style?sizeStep=2&positionStep=-1&color=white").json().getJSONObject("style")
+        val style = post("/api/style?sizeStep=2&positionStep=-1&horizontalStep=2&color=white").json().getJSONObject("style")
         assertEquals(34.0, style.getDouble("textSizeSp"), 0.01)
-        assertEquals(0.80, style.getDouble("verticalPosition"), 0.001)
+        assertEquals(0.78, style.getDouble("verticalPosition"), 0.001)
+        assertEquals(0.60, style.getDouble("horizontalPosition"), 0.001)
         assertEquals("white", style.getString("color"))
 
         // Unknown colour names are ignored rather than stored

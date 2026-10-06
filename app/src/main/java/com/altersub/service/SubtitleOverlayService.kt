@@ -53,6 +53,7 @@ class SubtitleOverlayService : Service() {
                     setTextColor(style.textArgb)
                     setBackground(style.boxArgb, style.edgeArgb)
                     setVerticalPosition(style.verticalPosition)
+                    setHorizontalPosition(style.horizontalPosition)
                 }
             }
         }
